@@ -3,7 +3,7 @@ Steps to run the code:
 1. Download the codebase folder.
 2. Access the folder in your terminal.
 3. Run:\
-	'chmod +x call_roll_apply_daily.sh'
+	'chmod +x call_roll_apply_daily.sh'\
 	'chmod +X run_code.sh'
 4. Go to line 2155 in trial_full_run.py and fill out your WRDS username data.
 5. Go to line 4 in WRDS_SQL_queries_Fernando.py and fill out your WRDS username data.
