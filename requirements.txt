@@ -1,0 +1,9 @@
+connectorx==0.3.2
+DateTime==5.4
+multiprocess==0.70.15
+numpy==1.24.4
+polars==0.20.8
+pyarrow==13.0.0
+SQLAlchemy==1.4.49
+tqdm==4.66.1
+wrds==3.1.6
