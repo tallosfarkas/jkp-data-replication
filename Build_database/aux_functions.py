@@ -217,6 +217,7 @@ def gen_raw_data_dfs(wrds_session):
     __crsp_sf_d = __crsp_sf_d.with_columns([pl.col('permno').cast(pl.Int64).alias('permno'), pl.col('permco').cast(pl.Int64).alias('permco')])
     __crsp_sf_d.write_ipc('Raw_data_dfs/__crsp_sf_d.ft')
     del __crsp_sf_d
+    wrds_session.close()
 @measure_time
 def download_raw_data_tables(wrds_session):
     table_names = ['comp.exrt_dly'  , 'ff.factors_monthly', 'comp.g_security' , 'comp.security'      ,
