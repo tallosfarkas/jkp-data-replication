@@ -2,6 +2,7 @@ import getpass
 import os
 import sys
 import stat
+import pandas as pd
 import sqlalchemy as sa
 import urllib.parse
 import polars as pl
@@ -291,12 +292,12 @@ ORDER BY 1;
         Takes the library and the table and describes all the columns
         in that table.
         Includes Column Name, Column Type, Nullable?, Comment
-    
+
         :param library: Postgres schema name.
         :param table: Postgres table name.
-    
+
         :rtype: polars.DataFrame
-    
+
         Usage::
         >>> db.describe_table('wrdssec_all', 'dforms')
                     name nullable     type comment
@@ -312,7 +313,7 @@ ORDER BY 1;
         table_info_dict = self.insp.get_columns(table, schema=library)
         table_info = pl.DataFrame(table_info_dict)
         return table_info.select(['name', 'nullable', 'type', 'comment'])
-   
+
     def get_row_count(self, library, table):
         """
         Uses the library and table to get the approximate row count for the table.
@@ -349,7 +350,7 @@ ORDER BY 1;
         iter_batches=False,
         batch_size=None,
         schema_overrides=None,
-        infer_schema_length=10_000,
+        infer_schema_length=100_000,
     ):
         """
         Queries the database using a raw SQL string.
