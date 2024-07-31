@@ -423,36 +423,3 @@ ORDER BY 1;
             return df
         except sa.exc.ProgrammingError as e:
             raise e
-
-    def raw_sql_fast(
-        self,
-        sql,
-        partition_on=None,
-        partition_range=None,
-        partition_num=None, protocol=None,
-        engine=None,
-        schema_overrides=None
-    ):
-        # Extract the connection details from the class
-        username = self._username
-        password = urllib.parse.quote_plus(self._password)
-        hostname = self._hostname
-        port = self._port
-        dbname = self._dbname
-        connect_args = self._connect_args
-
-        # Construct the URI
-        uri_args = "&".join([f"{k}={v}" for k, v in connect_args.items()])
-        uri = f"postgresql://{username}:{password}@{hostname}:{port}/{dbname}?{uri_args}"
-        #Get data using polars.read_database_uri
-        df = pl.read_database_uri(
-            query=sql,
-            uri=uri,
-            partition_on=partition_on,
-            partition_range=partition_range,
-            partition_num=partition_num,
-            protocol=protocol,
-            engine=engine,
-            schema_overrides=schema_overrides
-        )
-        return df
