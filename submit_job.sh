@@ -8,9 +8,9 @@
 
 #SBATCH --ntasks=1                      # Number of tasks (processes)
 
-#SBATCH --cpus-per-task=32              # Number of CPU cores per task
+#SBATCH --cpus-per-task=96              # Number of CPU cores per task
 
-#SBATCH --mem=500G                      # Memory per node (450 GB)
+#SBATCH --mem=200G                      # Memory per node (450 GB)
 
 #SBATCH --partition=bigmem
 
