@@ -251,7 +251,7 @@ def download_wrds_table(conn_obj, table_name, filename, cols = None):
     write_parquet_batches(t, filename)
     del t
     print('Finished')
-    
+
 def check_and_reset_connection(wrds_session, start_time, username, password):
     elapsed_time = time.time() - start_time
     if elapsed_time >= 45 * 60:
@@ -291,7 +291,7 @@ def download_raw_data_tables(username, password):
     cols_comp_g_secd = ['gvkey', 'iid', 'datadate', 'tpci', 'exchg', 'prcstd','curcdd', 'prccd', 'qunit', 'ajexdi', 'cshoc', 'prchd', 'prcld', 'cshtrd','trfd', 'curcddv', 'div', 'divd', 'divsp', 'monthend']
 
     download_wrds_table(wrds_session, 'comp.secd', 'Raw_tables/comp_secd.parquet', cols_comp_secd)
-    check_and_reset_connection(wrds_session, start_time, username, password)
+    wrds_session, start_time = check_and_reset_connection(wrds_session, start_time, username, password)
     download_wrds_table(wrds_session, 'comp.g_secd', 'Raw_tables/comp_g_secd.parquet', cols_comp_g_secd)
 
     wrds_session.disconnect()
