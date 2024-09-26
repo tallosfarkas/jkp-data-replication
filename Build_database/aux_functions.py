@@ -258,7 +258,8 @@ def check_and_reset_connection(wrds_session, start_time, username, password):
     if elapsed_time >= 45 * 60:
         wrds_session.disconnect()
         print('The connection to WRDS server needs to be reset to avoid exceeding time limits.')
-        while True:
+        for attempt in range(1, 6):  # Attempts 1 to 5
+            # Wait 60 seconds with messages every 10 seconds
             for remaining in range(60, 0, -10):
                 print(f"Attempting to reconnect in {remaining} seconds. You might be sent a Duo authentication request.")
                 time.sleep(10)
@@ -266,10 +267,14 @@ def check_and_reset_connection(wrds_session, start_time, username, password):
                 wrds_session = gen_wrds_connection_object(username, password)
                 print('Connection established. Continuing downloads.')
                 start_time = time.time()
-                break
+                break  # Exit the loop if connection is successful
             except Exception as e:
-                print(f"Failed to establish connection: {e}")
-                print("Retrying in 60 seconds.")
+                print(f"Failed to establish connection (Attempt {attempt} of 5): {e}")
+                if attempt < 5:
+                    print("Retrying in 60 seconds.")
+                else:
+                    print("Maximum connection attempts reached. Exiting.")
+                    raise e  # Or handle the failure accordingly
     return wrds_session, start_time
 
 @measure_time
@@ -2255,12 +2260,6 @@ def regression_3vars(y, x1, x2, x3, __n, __min):
          (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min))**2 * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min))) / den
     alpha = col(y).rolling_mean(window_size=__n, min_periods = __min) - beta1 * col(x1).rolling_mean(window_size=__n, min_periods = __min) - beta2 * col(x2).rolling_mean(window_size=__n, min_periods = __min) - beta3 * col(x3).rolling_mean(window_size=__n, min_periods = __min)
     return alpha, beta1, beta2, beta3
-
-def get_rolling_residuals(a,b1,b2,b3,x1,x2,x3,y,w):
-    squared_res_sum = w*(col(a)**2) + 2 * col(a) * col(b1) * col(x1).rolling_sum(window_size=w) + (col(b1)**2) * (col(x1)**2).rolling_sum(window_size=w) + 2 * col(a) * col(b2)* col(x2).rolling_sum(window_size=w) + 2 * col(b1) * col(b2) * (col(x1) * col(x2)).rolling_sum(window_size=w) + (col(b2)**2) * (col(x2)**2).rolling_sum(window_size=w) + 2 * col(a) * col(b3) * col(x3).rolling_sum(window_size=w) + 2 * col(b1) * col(b3) * (col(x1) * col(x3)).rolling_sum(window_size=w) + 2 * col(b2) * col(b3) * (col(x2) *  col(x3)).rolling_sum(window_size=w) + (col(b3)**2) * (col(x3)**2).rolling_sum(window_size=w) - 2 * col(a) * col(y).rolling_sum(window_size=w) -  2 * col(b1) * (col(x1) * col(y)).rolling_sum(window_size=w) - 2 * col(b2) * (col(x2) * col(y)).rolling_sum(window_size=w) - 2 * col(b3) * (col(x3) * col(y)).rolling_sum(window_size=w) + (col(y)**2).rolling_sum(window_size=w)
-    res_mean = (col(y).rolling_mean(window_size=w) - col(a) - col(b1) * col(x1).rolling_mean(window_size=w) - col(b2) * col(x2).rolling_mean(window_size=w) - col(b3) * col(x3).rolling_mean(window_size=w))
-    var = (squared_res_sum - w*(res_mean**2))/(w-1)
-    return (res_mean/(var**0.5))
 
 def residual_momentum(output_path, data_path, fcts_path, __n, __min, incl, skip):
     w = incl - skip
