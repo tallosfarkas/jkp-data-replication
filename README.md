@@ -53,7 +53,7 @@ This document provides instructions for creating a dataset based on the paper "I
 
    In the initial moments of execution, you may be prompted to grant access to WRDS using two-factor authentication (2FA), such as a Duo notification. It is crucial to grant this access for the program to function. After a few seconds/minutes, you should see a confirmation message from the Python code indicating that a table has been downloaded. If this message does not appear, please check your Internet connection.
 
-   If the code generates a timeout error, please set the `reset_connection_iter` parameter in the `download_raw_data_tables` function to `True`, and then restart the code. This means you should replace line 4 with:
+   If the code generates a timeout error, please set the `reset_connection_iter` parameter in the `download_raw_data_tables` function to `True`, and then restart the code. This means you should replace line 4 of the `main.py` file with:
 
    ```python
    download_raw_data_tables(username="user", password="password", reset_connection_iter=True)
