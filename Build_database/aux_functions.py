@@ -322,6 +322,7 @@ def adj_trd_vol_NASDAQ(datevar, col_to_adjust, exchg_var, exchg_val):
 
 @measure_time
 def gen_comp_dsf():
+    os.system('rm -f aux_comp_dsf.ddb')
     con = ibis.duckdb.connect('aux_comp_dsf.ddb', threads = os.cpu_count())    
     
     compustat_fx().write_parquet('fx_data.parquet')
