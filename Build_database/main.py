@@ -22,7 +22,7 @@ standardized_accounting_data('world',1, 'world_msf.parquet',1, pl.datetime(1949,
 create_acc_chars('acc_std_ann.parquet', 'achars_world.parquet', 4, 18, acc_chars_list(), 'world_msf.parquet', '')
 create_acc_chars('acc_std_qtr.parquet', 'qchars_world.parquet', 4, 18, acc_chars_list(), 'world_msf.parquet', '_qitem')
 combine_ann_qtr_chars('achars_world.parquet', 'qchars_world.parquet', acc_chars_list(), '_qitem')
-market_chars_monthly('world_msf.parquet', 'market_returns.parquet', 0)
+market_chars_monthly('world_msf.parquet', 'market_returns.parquet')
 create_world_data_prelim('world_msf.parquet', 'market_chars_m.parquet', 'acc_chars_world.parquet', 'world_data_prelim.parquet')
 ap_factors('ap_factors_daily.parquet','d', 'world_dsf.parquet', 'world_data_prelim.parquet', 'market_returns_daily.parquet', 10, 3)
 ap_factors('ap_factors_monthly.parquet','m', 'world_msf.parquet', 'world_data_prelim.parquet', 'market_returns.parquet', 10, 3)
