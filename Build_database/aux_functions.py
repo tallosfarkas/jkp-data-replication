@@ -2356,12 +2356,10 @@ def prepare_daily(data_path, fcts_path):
 
 def gen_ranks_and_normalize(df, id_vars, geo_vars, time_vars, desc_flag, var, min_stks):
     by_vars = geo_vars + time_vars
-    ranked_var = f'rank_{var}'
     var_ranks = (df.select([*id_vars, *by_vars, var])
                    .with_columns(count = pl.count(var).over(by_vars))
-                   .filter(col('count') > min_stks)
-                   .with_columns(col(var).rank(descending = desc_flag).over(by_vars).alias(ranked_var))
-                   .with_columns(((col(ranked_var)-pl.min(ranked_var))/col('count')).over(by_vars).alias(ranked_var))
+                   .filter(col('count') >= min_stks)
+                   .with_columns((col(var).rank(descending = desc_flag) / col('count')).over(by_vars).alias(f'rank_{var}'))
                    .drop([*geo_vars, var, 'count']))
     return var_ranks
 def gen_misp_exp(var_list, min_fcts):
@@ -2371,7 +2369,7 @@ def gen_misp_exp(var_list, min_fcts):
     return pl.when(c1).then(fl_none()).otherwise(pl.mean_horizontal(['rank_' + f'{i}' for i in var_list]))
 
 @measure_time
-def mispricing_factors(data_path, min_stks, min_fcts = 3):
+def mispricing_factors(data_path, min_stks, min_fcts = 3, output_path = 'mp_factors.parquet'):
     vars_mgmt = ['chcsho_12m','eqnpo_12m','oaccruals_at','noa_at','at_gr1','ppeinv_gr1a']
     vars_perf = ['o_score','ret_12_1','gp_at','niq_at']
     direction = [True, False, True, True, True, True, True, False, False, False]
@@ -2392,7 +2390,7 @@ def mispricing_factors(data_path, min_stks, min_fcts = 3):
     chars['1'] = (chars['1'].with_columns(mispricing_mgmt = gen_misp_exp(vars_mgmt, min_fcts),
                                           mispricing_perf = gen_misp_exp(vars_perf, min_fcts))
                             .select(['id', 'eom', 'mispricing_perf', 'mispricing_mgmt']))
-    chars['1'].collect().write_parquet('mp_factors.parquet')
+    chars['1'].collect().write_parquet(output_path)
 
 def regression_3vars(y, x1, x2, x3, __n, __min):
     den = (-((col(x1).rolling_var(window_size=__n, min_periods=__min)) * (col(x2).rolling_var(window_size=__n, min_periods=__min)) * (col(x3).rolling_var(window_size=__n, min_periods=__min))) +
