@@ -36,19 +36,24 @@ def setup_folder_structure():
 
 def collect_and_write(df, filename, collect_streaming = False):
     df.collect(streaming = collect_streaming).write_parquet(filename)
-        
+
 def load_firmshares_aux(filename):
     csho_var = 'cshoq' if 'fundq' in filename else 'csho'
     ajex_var = 'ajexq' if 'fundq' in filename else 'ajex'
     df = (pl.scan_parquet(filename)
-            .filter((col('indfmt')  == 'INDL')    &
-                    (col('datafmt') == 'STD')     &
-                    (col('popsrc')  == 'D')       &
-                    (col('consol')  == 'C')       &
-                    (col(csho_var).is_not_null()) &
-                    (col(ajex_var).is_not_null()))
-            .select(['gvkey', 'datadate', col(csho_var).alias('csho_fund'), col(ajex_var).alias('ajex_fund')]))
+            .with_columns([col(csho_var).cast(pl.Float64),col(ajex_var).cast(pl.Float64)])
+            .filter(
+                (pl.col('indfmt')  == 'INDL')    &
+                (pl.col('datafmt') == 'STD')     &
+                (pl.col('popsrc')  == 'D')       &
+                (pl.col('consol')  == 'C')       &
+                (pl.col(csho_var).is_not_null()) &
+                (pl.col(ajex_var).is_not_null())
+            )
+            .select(['gvkey', 'datadate', pl.col(csho_var).alias('csho_fund'), pl.col(ajex_var).alias('ajex_fund')])
+         )
     return df
+
 def sic_naics_aux(filename):
     df = (pl.scan_parquet(filename)
             .select(['gvkey', 'datadate', col('sich').alias('sic'), col('naicsh').alias('naics')])
@@ -2199,35 +2204,6 @@ def ap_factors(output_path, freq, sf_path, mchars_path, mkt_path, min_stocks_bp,
                 .join(ff , how = 'left', on = ['excntry', date_col])
                 .join(hxz, how = 'left', on = ['excntry', date_col]))
     output.write_parquet(output_path)
-def get_beta_and_ivol_exp(x, y, __n, __min, beta_var):
-    beta_exp  = (pl.rolling_cov(x,y,window_size=__n, min_periods = __min)/col(x).rolling_var(window_size=__n, min_periods = __min)).fill_nan(None)
-    ivol_exp  = ((col(y).rolling_var(window_size=__n, min_periods = __min) - (col(beta_var) ** 2) * col(x).rolling_var(window_size=__n, min_periods = __min)) ** (1/2)).fill_nan(None)
-    return beta_exp, ivol_exp
-def merge_sf_and_fcts(data_path, fcts_path):
-    fcts = (pl.scan_parquet(fcts_path)
-              .filter(col('mktrf').is_not_null())
-              .select(['excntry', 'eom','mktrf', 'hml', 'smb_ff']))
-    data = (pl.scan_parquet(data_path)
-              .filter((col('ret_local') != 0) & (col('ret_exc').is_not_null()) & (col('ret_lag_dif') == 1))
-              .select(['excntry','id','eom','ret_exc']))
-    sf = (data.join(fcts, how = 'left', on = ['excntry', 'eom'])
-              .drop('excntry'))
-    return sf
-def gen_resampled_dates(df, id_vars, time_var, freq):
-    df = (df.select([*id_vars, time_var])
-            .sort([*id_vars, time_var])
-            .with_columns(aux = (col(time_var).shift(-1).over(id_vars)).dt.offset_by('-' + freq).dt.month_end())
-            .with_columns((pl.coalesce([pl.date_ranges(start= time_var, end = 'aux', interval = freq), pl.concat_list([col(time_var)])])).alias(time_var))
-            .explode(time_var)
-            .select([*id_vars, time_var])
-            .unique())
-    return df
-def gen_sf_for_regression(data_path, fcts_path, id_vars, time_var, freq, wins_var, perc_low, perc_high):
-    __msf = merge_sf_and_fcts(data_path, fcts_path)
-    __msf2 = gen_resampled_dates(__msf, id_vars, time_var, freq)
-    __msf = winsorize_var(__msf, [time_var], wins_var, perc_low, perc_high)
-    __msf = __msf2.join(__msf, on = [*id_vars, time_var], how = 'left')
-    return __msf
 
 def winsorize_by_group(
     con,
@@ -2270,8 +2246,7 @@ def winsorize_by_group(
       ON {join_cond};
     """)
 
-@measure_time
-def market_beta(output_path, data_path, fcts_path, __n , __min):
+def prep_data_factor_regs(data_path, fcts_path):
     os.system('rm -f aux_beta.ddb')
     con = ibis.duckdb.connect('aux_beta.ddb', threads = os.cpu_count())
     con.create_table('data_msf', con.read_parquet(data_path), overwrite = True)
@@ -2287,6 +2262,8 @@ def market_beta(output_path, data_path, fcts_path, __n , __min):
         a.ret_exc,
         a.ret_lag_dif,
         b.mktrf,
+        b.hml,
+        b.smb_ff,
         CAST(
             (EXTRACT(year FROM a.eom) * 12
              + EXTRACT(month FROM a.eom)
@@ -2304,9 +2281,13 @@ def market_beta(output_path, data_path, fcts_path, __n , __min):
         AND b.mktrf    IS NOT NULL;
     """)
     winsorize_by_group(con, '__msf1', ['eom'], 'ret_exc', 0.1/100, 99.9/100, '__msf2')
+    return con
+@measure_time
+def market_beta(output_path, data_path, fcts_path, __n , __min):
+    con = prep_data_factor_regs(data_path, fcts_path)
     base_data = con.table('__msf2').to_polars().lazy()
     aux_maps = gen_aux_maps(__n)
-    df = pl.concat([process_map_chunks(base_data, mapping, 'capm', 60, 36) for mapping in aux_maps]).collect()
+    df = pl.concat([process_map_chunks(base_data, mapping, 'capm', __n, __min) for mapping in aux_maps]).collect()
     ids = con.table('__msf2').select(['id', 'id_int']).distinct().to_polars()
     dates = con.table('__msf2').select(['aux_date', 'eom']).distinct().to_polars().with_columns(col('aux_date').cast(pl.Int32))
     res = (df.with_columns(col('aux_date').cast(pl.Int32))
@@ -2316,6 +2297,23 @@ def market_beta(output_path, data_path, fcts_path, __n , __min):
              .sort(['id', 'eom'])
         )
     res.write_parquet(output_path)
+    con.disconnect()
+
+@measure_time
+def residual_momentum(output_path, data_path, fcts_path, __n, __min, incl, skip):
+    con = prep_data_factor_regs(data_path, fcts_path)
+    base_data = con.table('__msf2').to_polars().lazy()
+    aux_maps = gen_aux_maps(__n)
+    df = pl.concat([process_map_chunks(base_data, mapping, 'res_mom', __n, __min, incl, skip) for mapping in aux_maps]).collect()
+    ids = con.table('__msf2').select(['id', 'id_int']).distinct().to_polars()
+    dates = con.table('__msf2').select(['aux_date', 'eom']).distinct().to_polars().with_columns(col('aux_date').cast(pl.Int32))
+    res = (df.with_columns(col('aux_date').cast(pl.Int32))
+            .join(ids, how = 'inner', on = 'id_int')
+            .join(dates, how = 'inner', on = 'aux_date')
+            .select(['id', 'eom', f'resff3_{incl}_{skip}'])
+            .sort(['id', 'eom'])
+        )
+    res.write_parquet(output_path + f'_{incl}_{skip}.parquet')
     con.disconnect()
     
 @measure_time
@@ -2391,57 +2389,6 @@ def mispricing_factors(data_path, min_stks, min_fcts = 3, output_path = 'mp_fact
                                           mispricing_perf = gen_misp_exp(vars_perf, min_fcts))
                             .select(['id', 'eom', 'mispricing_perf', 'mispricing_mgmt']))
     chars['1'].collect().write_parquet(output_path)
-
-def regression_3vars(y, x1, x2, x3, __n, __min):
-    den = (-((col(x1).rolling_var(window_size=__n, min_periods=__min)) * (col(x2).rolling_var(window_size=__n, min_periods=__min)) * (col(x3).rolling_var(window_size=__n, min_periods=__min))) +
-       (col(x1).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min))**2 +
-       (col(x2).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min))**2 -
-       2 * (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min)) +
-       (col(x3).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min))**2)
-    beta1 = ((col(x2).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min)) -
-         (col(x2).rolling_var(window_size=__n, min_periods=__min)) * ((col(x3).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, y, window_size=__n, min_periods=__min))) -
-         (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, y, window_size=__n, min_periods=__min)) +
-         (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min))**2 * (pl.rolling_cov(x1, y, window_size=__n, min_periods=__min)) -
-         (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min)) +
-         (col(x3).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, y, window_size=__n, min_periods=__min))) / den
-    beta2 = ((col(x1).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min)) -
-         (col(x1).rolling_var(window_size=__n, min_periods=__min)) * ((col(x3).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, y, window_size=__n, min_periods=__min))) +
-         (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min))**2 * (pl.rolling_cov(x2, y, window_size=__n, min_periods=__min)) -
-         (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, y, window_size=__n, min_periods=__min)) -
-         (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min)) +
-         (col(x3).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, y, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min))) / den
-    beta3 = (-((col(x1).rolling_var(window_size=__n, min_periods=__min)) * (col(x2).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min))) +
-         (col(x1).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, y, window_size=__n, min_periods=__min)) +
-         (col(x2).rolling_var(window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, y, window_size=__n, min_periods=__min)) -
-         (pl.rolling_cov(x1, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x2, y, window_size=__n, min_periods=__min)) -
-         (pl.rolling_cov(x2, x3, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, y, window_size=__n, min_periods=__min)) * (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min)) +
-         (pl.rolling_cov(x1, x2, window_size=__n, min_periods=__min))**2 * (pl.rolling_cov(x3, y, window_size=__n, min_periods=__min))) / den
-    alpha = col(y).rolling_mean(window_size=__n, min_periods = __min) - beta1 * col(x1).rolling_mean(window_size=__n, min_periods = __min) - beta2 * col(x2).rolling_mean(window_size=__n, min_periods = __min) - beta3 * col(x3).rolling_mean(window_size=__n, min_periods = __min)
-    return alpha, beta1, beta2, beta3
-
-@measure_time
-def residual_momentum(output_path, data_path, fcts_path, __n, __min, incl, skip):
-    w = incl - skip
-    alpha_exp, beta1_exp, beta2_exp, beta3_exp = regression_3vars('ret_exc', 'mktrf', 'smb_ff', 'hml', __n, __min)
-    residual_exp = lambda i:  col('ret_exc').shift(i) - (col('alpha') * pl.lit(1.) + col('beta1') * col('mktrf').shift(i) + col('beta2') * col('smb_ff').shift(i) + col('beta3') * col('hml').shift(i))
-    res_var = f'resff3_{incl}_{skip}'
-    __msf = gen_sf_for_regression(data_path, fcts_path, ['id'], 'eom', '1mo', 'ret_exc', 0.1/100, 99.9/100)
-    __msf = (__msf.sort(['id','eom'])
-                  .with_columns(alpha = alpha_exp.over('id'),
-                                beta1 = beta1_exp.over('id'),
-                                beta2 = beta2_exp.over('id'),
-                                beta3 = beta3_exp.over('id'))
-                  .sort(['id','eom'])
-                  .with_columns(std_res = pl.concat_list([residual_exp(i).over(['id']) for i in range(1, w+1)]).list.drop_nulls())
-                  .select(['id','eom','std_res'])
-                  .with_columns(std_res = col('std_res').list.eval(pl.element().mean()/pl.element().std()),
-                                den     = col('std_res').list.eval(pl.element().std()))
-                  .explode(['std_res','den'])
-                  .with_columns((pl.when(col('den') != 0).then(col('std_res')).otherwise(fl_none())).alias(res_var))
-                  .select(['id','eom', res_var])
-                  .sort(['id','eom']))
-    __msf.collect().write_parquet(output_path + f'_{incl}_{skip}.parquet')
-    del __msf
 
 @measure_time
 def bidask_hl(output_path, data_path, market_returns_daily_path, __min_obs):
@@ -2835,7 +2782,7 @@ def apply_group_filter(df, stat, min_obs):
                 .filter(col('n') >= min_obs))
     return df
 
-def process_map_chunks(base_data, mapping, stats, sfx, __min):
+def process_map_chunks(base_data, mapping, stats, sfx, __min, incl = None, skip = None):
 
     funcs = {'rvol'       : rvol, 
              'rmax'       : rmax, 
@@ -2853,16 +2800,46 @@ def process_map_chunks(base_data, mapping, stats, sfx, __min):
              'turnover'   : turnover, 
              'mktcorr'    : mktcorr, 
              'mktvol'     : mktrf_vol,
-             'dimsonbeta' : dimsonbeta}
+             'dimsonbeta' : dimsonbeta,
+             'res_mom'    : res_mom,
+             }
     
     df = (base_data.join(mapping['group_map'], how = 'inner', on = 'aux_date')
                 .pipe(apply_group_filter, stat = stats, min_obs = __min)
-                .pipe(funcs[stats], sfx = sfx, __min = __min)
-                .join(mapping['date_map'], how = 'left', on = 'group_number')
-                .drop('group_number'))
+                )
+    
+    if stats == 'res_mom': df = df.pipe(funcs[stats], sfx = sfx, __min = __min, incl = incl, skip = skip)
+    else: df = df.pipe(funcs[stats], sfx = sfx, __min = __min)
+
+    df = (df.join(mapping['date_map'], how = 'left', on = 'group_number')
+            .drop('group_number')
+            )
     
     return df
-    
+
+def res_mom(df, sfx, __min, incl, skip):
+    res_exp = pl.col('ret_exc').least_squares.ols('mktrf', 'hml', 'smb_ff', add_intercept = True, mode = 'residuals').over(['id_int', 'group_number'])
+    df = (df.filter(
+                    col('hml').is_not_null() &
+                    col('smb_ff').is_not_null()
+                    )
+            .with_columns(
+                 res         = res_exp.alias('res'), 
+                 max_date_gn = pl.max('aux_date').over('group_number'),
+                 n           = pl.len().over(['id', 'group_number'])
+                 )
+            .filter(
+                    (col('aux_date') <= col('max_date_gn') - skip) & 
+                    (col('aux_date') >  col('max_date_gn') - incl) & 
+                    (col('n') >= __min)
+                    )
+            .group_by(['id_int', 'group_number'])
+            .agg(
+                (col('res').mean() / col('res').std()).fill_nan(None).alias(f'resff3_{incl}_{skip}')
+                )
+        )
+    return df
+
 def gen_aux_maps(sfx):
     parameter_mapping = {"_21d": 1,"_126d": 6,"_252d": 12,"_1260d": 60}
     date_aux = datetime.datetime.today().month + datetime.datetime.today().year * 12
@@ -2955,7 +2932,7 @@ def hxz4(df, sfx, __min):
     df = (df.filter(col('smb_hxz').is_not_null() & col('roe').is_not_null() & col('inv').is_not_null())
             .group_by(['id_int', 'group_number'])
             .agg(res_exp.std(ddof = 4).alias(f'ivol_hxz4{sfx}'),
-                res_exp.skew(bias = False).alias(f'iskew_hxz4{sfx}')))
+                 res_exp.skew(bias = False).alias(f'iskew_hxz4{sfx}')))
     return df
 
 def zero_trades(df, sfx, __min):
@@ -3007,3 +2984,4 @@ def dimsonbeta(df, sfx, __min):
             .with_columns(pl.sum_horizontal('mktrf', 'mktrf_ld1', 'mktrf_lg1').alias(f'beta_dimson{sfx}'))
             .select(['id_int', 'group_number', f'beta_dimson{sfx}']))
     return df
+
