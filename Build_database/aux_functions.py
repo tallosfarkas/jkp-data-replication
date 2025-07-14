@@ -10,6 +10,7 @@ from datetime import date
 from math import sqrt, exp
 from functools import reduce
 from polars import col
+import math
 def fl_none(): return pl.lit(None).cast(pl.Float64)
 def bo_false(): return pl.lit(False).cast(pl.Boolean)
 def measure_time(func):
@@ -930,29 +931,31 @@ def ff_ind_class(data_path, ff_grps):
                                 )
 
     data.collect().write_parquet('__msf_world3.parquet')
-def perc_method(series, p):
-    """
-    Calculates the given percentile using the SAS 5th method, which is the default SAS method and was used in our SAS code.
-    """
+# def perc_method(series, p):
+#     """
+#     Calculates the given percentile using the SAS 5th method, which is the default SAS method and was used in our SAS code.
+#     """
+#     n = len(series)
+#     rank = p * n
+#     if rank.is_integer():return (series[int(rank) - 1] + series[int(rank)]) / 2
+#     else: return series[int(rank)]
+# def perc_method(series, p):
+#     n = len(series)
+#     h = p * n
+#     j = int(h)
+#     if h == j: return (series[j-1] + series[j]) * 0.5
+#     return series[j]
+def perc_method(series, p, tol=1e-8):
     n = len(series)
-    rank = p * n
-    if rank.is_integer():return (series[int(rank) - 1] + series[int(rank)]) / 2
-    else: return series[int(rank)]
+    h = p * n
+    j_round = int(round(h))
+    if abs(h - j_round) < tol: return 0.5 * (series[j_round - 1] + series[j_round])
+    j_floor = int(math.floor(h))
+    return series[j_floor]
+
 def perc_exp(var, perc_function, list = False, type = 'float'):
     if list: return col(var).list.sort().map_elements(perc_function, return_dtype = pl.Float64)
     else: return col(var).sort().map_elements(perc_function, return_dtype = pl.Float64)
-def winsorize_var(df, sort_vars, wins_var, perc_low, perc_high):
-    aux = (df.group_by(sort_vars)
-                .agg(col(wins_var))
-                .with_columns(low  = perc_exp(wins_var, lambda x: perc_method(x, perc_low), True),
-                              high = perc_exp(wins_var, lambda x: perc_method(x, perc_high), True))
-                .select([*sort_vars, 'low','high']))
-    wins_df = (df.join(aux, how = 'left', on = sort_vars)
-                    .with_columns(ret_exc = (pl.when(col(wins_var) < col('low' )).then(col('low' ))
-                                            .when(col(wins_var) > col('high')).then(col('high'))
-                                            .otherwise(col(wins_var))))
-                    .drop(['low', 'high']))
-    return wins_df
 
 @measure_time
 def nyse_size_cutoffs(data_path):
@@ -976,13 +979,15 @@ def classify_stocks_size_groups():
     nyse_cutoffs = pl.scan_parquet('nyse_cutoffs.parquet')
     __msf_world = pl.scan_parquet('__msf_world3.parquet')
     world_msf = (__msf_world.join(nyse_cutoffs, how = 'left', on = 'eom')
-                            .with_columns(size_grp = pl.when(col('me').is_null()).then(pl.lit(''))
-                                                       .when(col('me') >= col('nyse_p80')).then(pl.lit('mega'))
-                                                       .when(col('me') >= col('nyse_p50')).then(pl.lit('large'))
-                                                       .when(col('me') >= col('nyse_p20')).then(pl.lit('small'))
-                                                       .when(col('me') >= col('nyse_p1')).then(pl.lit('micro'))
-                                                       .otherwise(pl.lit('nano')))
-                            .drop([i for i in nyse_cutoffs.collect_schema().names() if i not in ['eom']]))#['eom', 'n']])
+                        .with_columns(size_grp = pl.when(col('me').is_null()         ).then(None)
+                                                   .when(col('nyse_p80').is_null()   ).then(pl.lit('mega')) #This is just to match SAS excactly
+                                                   .when(col('me') >= col('nyse_p80')).then(pl.lit('mega'))
+                                                   .when(col('me') >= col('nyse_p50')).then(pl.lit('large'))
+                                                   .when(col('me') >= col('nyse_p20')).then(pl.lit('small'))
+                                                   .when(col('me') >= col('nyse_p1') ).then(pl.lit('micro'))
+                                                   .otherwise(pl.lit('nano')))
+                        .drop([i for i in nyse_cutoffs.collect_schema().names() if i not in ['eom']])
+            )
     world_msf.collect().write_parquet('world_msf.parquet')
 
 @measure_time
@@ -1070,9 +1075,11 @@ def market_returns(data_path, freq, wins_comp, wins_data_path):
                          .sort(['id', dt_col])
                          .with_columns(me_lag1     = col('me').shift(1).over('id'),
                                        dolvol_lag1 = col('dolvol').shift(1).over('id')))
-    if wins_comp == 1: __common_stocks = add_cutoffs_and_winsorize(__common_stocks, wins_data_path, group_vars, dt_col)
+    if wins_comp == 1: 
+        __common_stocks = add_cutoffs_and_winsorize(__common_stocks, wins_data_path, group_vars, dt_col)
     __common_stocks = apply_stock_filter_and_compute_indexes(__common_stocks, dt_col, max_date_lag)
-    if freq == 'd': __common_stocks = drop_non_trading_days(__common_stocks, 'stocks', dt_col, ['excntry','year','month'], 0.25)
+    if freq == 'd': 
+        __common_stocks = drop_non_trading_days(__common_stocks, 'stocks', dt_col, ['excntry','year','month'], 0.25)
     __common_stocks.sort(['excntry', dt_col]).collect().write_parquet(f'market_returns{path_aux}.parquet')
 
 def quarterize(df, var_list):
@@ -1989,7 +1996,7 @@ def seasonality(data, ret_x, start_year, end_year):
     ann_r = pl.lit(0.)
     for i in range((start_year-1)*12, (end_year*12)): all_r += col(ret_x).shift(i)
     for i in range((start_year*12-1), (end_year*12), 12): ann_r += col(ret_x).shift(i)
-    c1 = col('count') > (end_year*12)
+    c1 = col('count') >= (end_year*12)
     seas_an_exp = ann_r / len(range((start_year*12-1), (end_year*12), 12))
     seas_na_exp = (all_r - ann_r) / (len(range((start_year-1)*12, (end_year*12))) - len(range((start_year*12-1), (end_year*12), 12)))
     data = (data.sort(['id','eom'])
@@ -2013,7 +2020,7 @@ def eqnpo_cols(lag):
     return (pl.when(c1 & c2 & c3).then(eqnpo_col_exp).otherwise(fl_none())).alias(f'eqnpo_{lag}m')
 def div_cols(i, spc = False):
     div_var = 'div' if (not spc) else 'divspc'
-    num = col(f'{div_var}1m_me') if (i == 1) else col(f'{div_var}1m_me').rolling_sum(window_size = i, min_periods = 1)
+    num = col(f'{div_var}1m_me') if (i == 1) else col(f'{div_var}1m_me').rolling_sum(window_size = i, min_periods = 1).over('id')
     return (pl.when((col('count') >= i) & (col('me') != 0)).then(num / col('me'))
               .otherwise(fl_none())).alias(f'{div_var}{i}m_me')
 @measure_time
@@ -2027,22 +2034,21 @@ def market_chars_monthly(data_path, market_ret_path, local_currency = False):
     market_ret = pl.scan_parquet(market_ret_path)
     data = (pl.scan_parquet(data_path)
               .join(market_ret, how = 'left', on = ['excntry', 'eom'])
-              .with_columns(pl.when(col('ret_local') == 0).then(pl.lit(1)).otherwise(pl.lit(0)).alias('ret_zero'))
-              .select(['id','date','eom','me','shares','adjfct','prc','ret','ret_local', 'div_tot', 'div_cash', 'div_spc', 'dolvol','ret_lag_dif','ret_zero','ret_exc','mkt_vw_exc', col(ret_var).alias('ret_x')]))
+              .with_columns(col(ret_var).alias('ret_x'))
+              #No need to compute ret_zero because it's not used in the final output
+              )
     __stock_coverage = (data.group_by('id')
                             .agg(start_date = pl.min('eom'),
                                  end_date   = pl.max('eom'))
                             .sort(['id','start_date']))
     __full_range = expand(__stock_coverage, ['id'], 'start_date', 'end_date', 'month', 'eom')
     data = (__full_range.join(data, how = 'left', on = ['id', 'eom'])
-                        .select(['id', 'eom', 'me', 'shares', 'adjfct', 'prc', 'ret','ret_local','ret_x','ret_lag_dif','div_tot','div_cash','div_spc','dolvol','ret_zero','ret_exc','mkt_vw_exc'])
                         .sort(['id', 'eom'])
                         .with_columns(ri       = ((1 + pl.coalesce(['ret',   0])).cum_prod()).over('id'),
                                       ri_x     = ((1 + pl.coalesce(['ret_x', 0])).cum_prod()).over('id'),
                                       count    = (col('id').cum_count()).over('id'),
                                       ret_miss = pl.when((col('ret_x').is_not_null()) & (col('ret_lag_dif') == 1)).then(pl.lit(0)).otherwise(pl.lit(1)))
                         .with_columns([pl.when(col('ret_miss') == 1).then(fl_none()).otherwise(i).alias(i) for i in ['ret_x', 'ret', 'ret_local', 'ret_exc', 'mkt_vw_exc']])
-                        .drop(['ret_zero', 'ret_lag_dif'])
                         .unique(['id','eom'])
                         .with_columns(market_equity = col('me'),
                                       div1m_me      = col('div_tot') * col('shares'),
@@ -2056,11 +2062,11 @@ def market_chars_monthly(data_path, market_ret_path, local_currency = False):
                                       [mom_rev_cols(i,j) for i,j in mom_rev_lags])
            )
     for i in [[1,1], [2,5], [6, 10], [11, 15], [16, 20]]: data = seasonality(data, 'ret_x', i[0], i[1])
-    data = (data.with_columns([pl.when(pl.col(col) < 0.000009).then(0.).otherwise(pl.col(col)).alias(col)for col in data.collect_schema().names() if col.startswith("div") and col.endswith("me")])
-                .drop(['me','shares','adjfct', 'adjfct', 'prc', 'ret','ret_local','ret_x', 'div_tot', 'div_cash', 'div_spc', 'dolvol', 'ret_exc', 'mkt_vw_exc','ret_miss', 'ri_x', 'ri', 'count', 'aux'])
+    data = (data#.with_columns([pl.when(col(var) < 1e-10).then(0.).otherwise(col(var)).alias(var) for var in data.collect_schema().names() if col.startswith("div") and col.endswith("me")]) #Change to 0 when(col(var) < 1e-10) then 0. to match SAS precision
+                .select(['id', 'eom', 'market_equity', col("^div.*me$"), col("^eqnpo.*$"), col("^chcsho.*$"), col("^ret_\d+_\d+$"), col("^seas.*$")])
                 .sort(['id','eom']))
-    #DO NOT USE STREAMING HERE
-    data.collect().write_parquet('market_chars_m.parquet')
+
+    data.collect(streaming = True).write_parquet('market_chars_m.parquet')
 
 @measure_time
 def firm_age(data_path):
@@ -2122,14 +2128,16 @@ def char_pf_rets():
 
 def sort_ff_style(char, min_stocks_bp, min_stocks_pf, date_col, data, sf):
     print(f'Executing sort_ff_style for {char}', flush=True)
-    c1 = (((col('size_grp_l').is_in(['small', 'large', 'mega'])) & (col('excntry_l') != 'USA')) | ((col('crsp_exchcd_l') == 1) | (col('comp_exchg_l') == 11) & (col('excntry_l') == 'USA'))) &\
+    c1 = (
+            ((col('size_grp_l').is_in(['small', 'large', 'mega'])) & (col('excntry_l') != 'USA')) | 
+            (((col('crsp_exchcd_l') == 1) | (col('comp_exchg_l') == 11)) & (col('excntry_l') == 'USA'))
+         ) &\
          col(f'{char}_l').is_not_null()
     char_pf_exp = (pl.when(col(f'{char}_l') >= col('bp_p70')).then(pl.lit('high'))\
                      .when(col(f'{char}_l') >= col('bp_p30')).then(pl.lit('mid'))\
                      .otherwise(pl.lit('low'))).alias('char_pf')
     over_vars = ['excntry_l','size_pf', 'char_pf', 'eom']
-    bp_stocks = (data.sort(['eom','excntry_l','id'])
-                     .filter(c1)
+    bp_stocks = (data.filter(c1)
                      .group_by(['eom', 'excntry_l'])
                      .agg(n   = pl.len().alias('n'),
                           aux = col(f'{char}_l'))
@@ -2137,10 +2145,10 @@ def sort_ff_style(char, min_stocks_bp, min_stocks_pf, date_col, data, sf):
                                    bp_p70 = perc_exp('aux', lambda x: perc_method(x, 0.7), True))
                      .drop('aux'))
     data = (data.join(bp_stocks, how = 'left', on = ['excntry_l', 'eom'])
-                .filter((col('n') >= min_stocks_bp) & (col(f'{char}_l').is_not_null()) & (col('size_pf') != '').fill_null(pl.lit(True).cast(pl.Boolean)))
+                .filter((col('n') >= min_stocks_bp) & (col(f'{char}_l').is_not_null()) & (col('size_pf') != ''))
                 .select(['excntry_l','id','eom','size_pf', 'me_l', char_pf_exp])
                 .with_columns(w = pl.when((pl.sum('me_l') != 0).over(over_vars)).then((col('me_l')/pl.sum('me_l')).over(over_vars)).otherwise(fl_none()),
-                              n = pl.len().over('excntry_l','size_pf', 'char_pf', 'eom'))
+                              n = pl.count('me_l').over(over_vars))
                 .filter(col('n') >= min_stocks_pf)
                 .drop('n'))
     returns = sf.join(data, how = 'inner', left_on = ['id','eom','excntry'], right_on = ['id','eom','excntry_l'])
@@ -2149,33 +2157,55 @@ def sort_ff_style(char, min_stocks_bp, min_stocks_pf, date_col, data, sf):
                       .agg(ret_exc = pl.sum('ret_exc'))
                       .with_columns(characteristic = pl.lit(char),
                                     combined_pf = (col('size_pf') + '_' + col('char_pf')))
-                      .drop(['size_pf', 'char_pf'])
                       .collect()
                       .pivot(values='ret_exc',index=['excntry', date_col],columns='combined_pf')
                       .select(['excntry', date_col, *char_pf_rets()]).sort(['excntry', date_col]))
     return returns
 
+def winsorize_var(df, sort_vars, wins_var, perc_low, perc_high):
+    aux = (df.group_by(sort_vars)
+                .agg(col(wins_var))
+                .with_columns(low  = perc_exp(wins_var, lambda x: perc_method(x, perc_low), True),
+                              high = perc_exp(wins_var, lambda x: perc_method(x, perc_high), True))
+                .select([*sort_vars, 'low','high']))
+    wins_df = (df.join(aux, how = 'left', on = sort_vars)
+                    .with_columns(ret_exc = (pl.when(col(wins_var) < col('low' )).then(col('low' ))
+                                            .when(col(wins_var) > col('high')).then(col('high'))
+                                            .otherwise(col(wins_var))))
+                    .drop(['low', 'high']))
+    return wins_df
 @measure_time
 def ap_factors(output_path, freq, sf_path, mchars_path, mkt_path, min_stocks_bp, min_stocks_pf):
-    date_col    = 'eom' if freq == 'm' else 'date'
-    sf_cols     = {'m': ['excntry','id','eom', 'ret_exc','ret_lag_dif'], 'd': ['excntry','id', 'date','eom', 'ret_exc','ret_lag_dif']}
-    sf_cond     = {'m': (col('ret_lag_dif') == 1) & (col('ret_exc').is_not_null()), 'd': (col('ret_lag_dif') <= 5) & (col('ret_exc').is_not_null())}
-    copied_cols = ['id','eom','market_equity','source_crsp','ret_lag_dif']
-    lag_vars    = ['comp_exchg', 'crsp_exchcd', 'exch_main', 'obs_main', 'common', 'primary_sec', 'excntry', 'size_grp', 'me', 'be_me', 'at_gr1', 'niq_be']
-    lagged_cols = [col(i).shift(1).over(['id', 'source_crsp']).alias(i + '_l') for i in lag_vars]
+    date_col = 'eom' if freq == 'm' else 'date'
+    sf_cond  = (col('ret_lag_dif') == 1) if freq == 'm' else (col('ret_lag_dif') <= 5)
+    lag_vars = ['comp_exchg', 'crsp_exchcd', 'exch_main', 'obs_main', 'common', 'primary_sec', 'excntry', 'size_grp', 'me', 'be_me', 'at_gr1', 'niq_be']
 
     print(f'Executing AP factors with frequency {freq}', flush=True)
-    world_sf1 = (pl.scan_parquet(sf_path)
-                   .select(pl.all().shrink_dtype())
-                   .select(sf_cols[freq])
-                   .filter(sf_cond[freq])
-                   .drop('ret_lag_dif'))
-    world_sf2 =  winsorize_var(world_sf1, ['eom'], 'ret_exc', 0.1/100, 99.9/100)
 
+    #sf_cond  = "a.ret_lag_dif = 1" if freq == 'm' else "a.ret_lag_dif <= 5"
+    # os.system('rm -f aux_ap_factors.ddb')
+    # con = ibis.duckdb.connect('aux_ap_factors.ddb', threads = os.cpu_count())
+    # con.create_table('data_msf', con.read_parquet(sf_path), overwrite = True)
+    # con.raw_sql(f"""
+    #     DROP TABLE IF EXISTS filtered_rets;
+        
+    #     CREATE TABLE filtered_rets AS
+    #     SELECT excntry, id, eom, ret_exc
+    #     FROM data_msf AS a
+    #     WHERE {sf_cond} 
+    #           AND a.ret_exc IS NOT NULL
+    #         ;
+    #     """)
+    # winsorize_by_group(con, 'filtered_rets', ['eom'], 'ret_exc', 0.1/100, 99.9/100, 'wins_rets')
+    # world_sf2 = con.table('wins_rets').to_polars().lazy()
+    world_sf1 = (pl.scan_parquet(sf_path)
+                .filter(sf_cond & col('ret_exc').is_not_null())
+                .select(['excntry', 'id', 'eom', 'ret_exc']))
+    world_sf2 =  winsorize_var(world_sf1, ['eom'], 'ret_exc', 0.1/100, 99.9/100)
+    
     base = (pl.scan_parquet(mchars_path)
-              .select(pl.all().shrink_dtype())
               .sort(['id', 'eom'])
-              .select(copied_cols + lagged_cols)
+              .with_columns([col(i).shift(1).over(['id', 'source_crsp']).alias(i + '_l') for i in lag_vars])
               .sort(['id', 'eom'])
               .with_columns([pl.when(((12* (col('eom').dt.year() - col('eom').shift(1).dt.year()) +\
                                        (col('eom').dt.month() - col('eom').shift(1).dt.month()).cast(pl.Int32)).over('id') != 1)).then(pl.lit(None))
@@ -2189,7 +2219,8 @@ def ap_factors(output_path, freq, sf_path, mchars_path, mkt_path, min_stocks_bp,
               .with_columns(size_pf = (pl.when(col('size_grp_l').is_null()).then(pl.lit(''))\
                                          .when(col('size_grp_l').is_in(['large', 'mega'])).then(pl.lit('big'))\
                                          .otherwise(pl.lit('small'))))
-              .sort(['excntry_l', 'size_grp_l', 'eom']))
+              .sort(['excntry_l', 'size_grp_l', 'eom'])#Remove this sort
+              )
 
     ff           = sort_ff_style('be_me' , min_stocks_bp, min_stocks_pf, date_col, base, world_sf2).rename({'lms': 'hml'       , 'smb': 'smb_ff'})
     asset_growth = sort_ff_style('at_gr1', min_stocks_bp, min_stocks_pf, date_col, base, world_sf2).rename({'lms': 'at_gr1_lms', 'smb': 'at_gr1_smb'})
@@ -2984,3 +3015,4 @@ def dimsonbeta(df, sfx, __min):
             .with_columns(pl.sum_horizontal('mktrf', 'mktrf_ld1', 'mktrf_lg1').alias(f'beta_dimson{sfx}'))
             .select(['id_int', 'group_number', f'beta_dimson{sfx}']))
     return df
+
