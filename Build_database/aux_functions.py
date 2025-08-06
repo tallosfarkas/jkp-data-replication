@@ -1536,8 +1536,8 @@ def add_helper_vars(data):
                                  nca_x      = col('at_x') - col('ca_x'),
                                  ncoa_x     = col('at_x') - col('ca_x') - pl.coalesce(['ivao', 0]),
                                  aliq_x     = col('che') + 0.75 * col('coa_x') + 0.5 * (col('at_x') - col('ca_x') - pl.coalesce(['intan', 0.])),
-                                 be_x       = pl.when(col('be_x') >= 0).then('be_x').otherwise(fl_none()),
-                                 bev_x      = pl.when(col('bev_x') >= 0).then('bev_x').otherwise(fl_none()))
+                                 be_x       = pl.when(col('be_x') > 0).then('be_x').otherwise(fl_none()),
+                                 bev_x      = pl.when(col('bev_x') > 0).then('bev_x').otherwise(fl_none()))
                    .with_columns(pi_x       = pl.coalesce(['pi', (col('ebit_x') - col('xint') + pl.coalesce(['spi', 0.]) + pl.coalesce(['nopi', 0.]))]),
                                  oa_x       = col('coa_x') + col('ncoa_x'),
                                  nncoa_x    = col('ncoa_x') - col('ncol_x'))
@@ -1546,8 +1546,8 @@ def add_helper_vars(data):
                    .sort(sort_vars)
                    .with_columns(nix_x      = pl.coalesce(['ni', (col('ni_x') + pl.coalesce(['xido_x', 0.])), col('ni_x') + col('xi') + col('do')]),
                                  oacc_x     = pl.when(col('count') > 12).then(pl.coalesce([col('ni_x') - col('oancf'), col('cowc_x').diff(n=12) + col('nncoa_x').diff(n=12)])).otherwise(fl_none()),
-                                 dltnetis_x = pl.when(c1).then(fl_none()).otherwise(pl.coalesce([sub_sas('dltis', 'dltr'), 'ltdch', col('dltt').diff(n=12).over(over_vars)])),
-                                 dstnetis_x = pl.when(c2).then(fl_none()).otherwise(pl.coalesce(['dlcch', col('dlc').diff(n=12).over(over_vars)])))
+                                 dltnetis_x = pl.when(c1).then(fl_none()).otherwise(pl.coalesce([sub_sas('dltis', 'dltr'), 'ltdch', col('dltt').diff(n=12)])),
+                                 dstnetis_x = pl.when(c2).then(fl_none()).otherwise(pl.coalesce(['dlcch', col('dlc').diff(n=12)])))
                    .sort(sort_vars)
                    .with_columns(fi_x       = col('nix_x') + col('xint'),
                                  tacc_x     = pl.when(col('count') > 12).then(col('oacc_x') + col('nfna_x').diff(n=12)).otherwise(fl_none()),
