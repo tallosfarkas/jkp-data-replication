@@ -5,6 +5,7 @@ import time
 import datetime
 import ibis
 from ibis import _
+import duckdb
 import os
 from datetime import date
 from math import sqrt, exp
@@ -415,91 +416,50 @@ def gen_crsp_sf(freq):
                                 'exchcd' ,'gvkey' ,'iid'    ,'exch_main','shrcd'   ,'me'      ]))
     return result
 
-def gen_wrds_connection_object(user, password):
-    """
-    Description:
-        Open a WRDS Postgres connection via Ibis/Postgres.
+def gen_wrds_connection_info(user, password):
+    return  (
+            f"host=wrds-pgdata.wharton.upenn.edu "
+            f"port=9737 dbname=wrds "
+            f"user={user} password={password} sslmode=require"
+        )
 
-    Steps:
-        1) Connect to wrds-pgdata.wharton.upenn.edu:9737 with user/password/database=wrds.
-        2) Return the connection object.
+def get_columns(conn, conninfo, lib, table):
+    cols = conn.execute(f"""
+        SELECT * 
+        FROM postgres_scan('{conninfo}', '{lib}', '{table}') 
+        LIMIT 0
+    """).description
+    return [c[0] for c in cols]
 
-    Output:
-        Ibis Postgres client connected to WRDS.
-    """
-    # Connect to WRDS using Ibis
-    con = ibis.postgres.connect(
-        host="wrds-pgdata.wharton.upenn.edu",
-        port=9737,
-        user=user,
-        password=password,
-        database="wrds")
-    return con
+def build_projection(cols):
+    casts = []
+    if "permno" in cols:
+        casts.append("TRY_CAST(permno AS BIGINT) AS permno")
+    if "permco" in cols:
+        casts.append("TRY_CAST(permco AS BIGINT) AS permco")
+    if "sic" in cols:
+        casts.append("TRY_CAST(sic AS BIGINT) AS sic")
+    if "sich" in cols:
+        casts.append("TRY_CAST(sich AS BIGINT) AS sich")
 
-def download_wrds_table(conn_obj, table_name, filename, cols = None):
-    """
-    Description:
-        Download a WRDS table to Parquet, optionally selecting columns and fixing dtypes.
+    if casts:
+        return "* REPLACE (" + ", ".join(casts) + ")"
+    else:
+        return "*"
 
-    Steps:
-        1) Split 'lib.table' into library and table; build Ibis table.
-        2) If cols provided, select them.
-        3) Cast common ID codes to int64 when present (permno, permco, sic, sich).
-        4) Save to Parquet at filename; log start/finish.
-
-    Output:
-        Parquet file for the requested WRDS table.
-    """
-    print('Downloading table:' , table_name)
-
+def download_wrds_table(conninfo, duckdb_conn, table_name, filename):
     lib, table = table_name.split('.')
-    t = conn_obj.table(table, database = lib)
-    if cols: t = t.select(cols)
+    cols = get_columns(duckdb_conn, conninfo, lib, table)
+    projection = build_projection(cols)
 
-    casting_cols = [t[var].cast('int64').name(var) for var in ['permno', 'permco', 'sic', 'sich'] if var in t.columns]
-    if casting_cols: t = t.mutate(*casting_cols)
-        
-    t.to_parquet(filename)
-    del t
-    print('Finished')
-
-def check_and_reset_connection(wrds_session, start_time, username, password):
-    """
-    Description:
-        Keep WRDS connection alive; if ≥45 minutes elapsed, reconnect with backoff prompts.
-
-    Steps:
-        1) If elapsed ≥ 45 min: disconnect; loop up to 5 attempts:
-        a) Wait 60s (progress every 10s), then try to reconnect.
-        b) On success, reset start_time and continue; on final failure, raise.
-        2) If not elapsed, return unchanged.
-
-    Output:
-        (wrds_session, start_time) — refreshed connection.
-    """
-    elapsed_time = time.time() - start_time
-    if elapsed_time >= 30 * 60:
-        wrds_session.disconnect()
-        print('The connection to WRDS server needs to be reset to avoid exceeding time limits.')
-        for attempt in range(1, 6):  # Attempts 1 to 5
-            # Wait 60 seconds with messages every 10 seconds
-            for remaining in range(60, 0, -10):
-                print(f"Attempting to reconnect in {remaining} seconds. You might be sent a Duo authentication request.")
-                time.sleep(10)
-            try:
-                wrds_session = gen_wrds_connection_object(username, password)
-                print('Connection established. Continuing downloads.')
-                start_time = time.time()
-                break  # Exit the loop if connection is successful
-            except Exception as e:
-                print(f"Failed to establish connection (Attempt {attempt} of 5): {e}")
-                if attempt < 5:
-                    print("Retrying in 60 seconds.")
-                else:
-                    print("Maximum connection attempts reached. Exiting.")
-                    raise e  # Or handle the failure accordingly
-    return wrds_session, start_time
-
+    duckdb_conn.execute(f"""
+        COPY (
+          SELECT {projection}
+          FROM postgres_scan('{conninfo}', '{lib}', '{table}')
+        )
+        TO '{filename}' (FORMAT PARQUET);
+    """)
+    
 @measure_time
 def download_raw_data_tables(username, password):
     """
@@ -520,23 +480,19 @@ def download_raw_data_tables(username, password):
                    'comp.g_company' , 'crsp.msenames'     , 'crsp.dsenames'   , 'crsp.ccmxpf_lnkhist',
                    'comp.funda'     , 'comp.fundq'        , 'crsp.dsedelist'  , 'crsp.msedelist'     ,
                    'comp.secm'      , 'crsp.mcti'         , 'crsp.msf'        , 'comp.g_co_hgic'     ,
-                   'crsp.dsf'       , 'comp.g_funda'      , 'comp.co_hgic'    , 'comp.g_fundq']
+                   'crsp.dsf'       , 'comp.g_funda'      , 'comp.co_hgic'    , 'comp.g_fundq'       ,
+                   'comp.secd'      , 'comp.g_secd'
+                   ]
+
+    wrds_session_data = gen_wrds_connection_info(username, password)
+    con = duckdb.connect(":memory:")
+    con.execute("INSTALL postgres; LOAD postgres;")
+
+    for table in table_names: 
+        print(f"Downloading WRDS table: {table}", flush=True)
+        download_wrds_table(wrds_session_data, con, table, 'Raw_tables/' + table.replace('.', '_') + '.parquet')
     
-    wrds_session = gen_wrds_connection_object(username, password)
-    start_time = time.time()
-
-    # for table in table_names: 
-    #     download_wrds_table(wrds_session, table, 'Raw_tables/' + table.replace('.', '_') + '.parquet')
-    #     wrds_session, start_time = check_and_reset_connection(wrds_session, start_time, username, password)
-
-    cols_comp_secd = ['gvkey','iid', 'datadate', 'tpci', 'exchg', 'prcstd', 'curcdd', 'prccd', 'ajexdi', 'cshoc', 'prchd', 'prcld', 'cshtrd', 'trfd', 'curcddv', 'div', 'divd', 'divsp']
-    cols_comp_g_secd = ['gvkey', 'iid', 'datadate', 'tpci', 'exchg', 'prcstd','curcdd', 'prccd', 'qunit', 'ajexdi', 'cshoc', 'prchd', 'prcld', 'cshtrd','trfd', 'curcddv', 'div', 'divd', 'divsp', 'monthend']
-
-    # download_wrds_table(wrds_session, 'comp.secd', 'Raw_tables/comp_secd.parquet', cols_comp_secd)
-    wrds_session, start_time = check_and_reset_connection(wrds_session, start_time, username, password)
-    download_wrds_table(wrds_session, 'comp.g_secd', 'Raw_tables/comp_g_secd.parquet', cols_comp_g_secd)
-
-    wrds_session.disconnect()
+    con.close()
 
 @measure_time
 def prepare_comp_sf(freq):
@@ -558,7 +514,6 @@ def prepare_comp_sf(freq):
         process_comp_sf1('m')
     else: process_comp_sf1(freq)
 
-@measure_time
 def populate_own(inset_path, idvar, datevar, datename):
     """
     Description:
@@ -638,7 +593,6 @@ def adj_trd_vol_NASDAQ(datevar, col_to_adjust, exchg_var, exchg_val):
                      .otherwise(col(col_to_adjust))).alias(col_to_adjust)
     return adj_trd_vol
 
-@measure_time
 def gen_comp_dsf():
     """
     Description:
@@ -731,7 +685,7 @@ def gen_comp_dsf():
         prc_local    * fx AS prc,
         prc_high_lcl * fx AS prc_high,
         prc_low_lcl  * fx AS prc_low,
-        (prc_local   * fx) * cshoc AS me,
+        (prc_local   * fx) * cshoc AS med,
         cshtrd       * (prc_local * fx) AS dolvol,
         ri_local     * fx AS ri,
         COALESCE(div, 0)   * fx_div AS div_tot,
@@ -815,9 +769,7 @@ def gen_secm_data():
     compustat_fx().rename({'datadate': 'date'}).write_parquet('fx_data.parquet')
     con.create_table('comp_secm'     , con.read_parquet('Raw_tables/comp_secm.parquet'), overwrite = True)
     con.create_table('__firm_shares2', con.read_parquet('__firm_shares2.parquet')      , overwrite = True)
-    con.creat
-    
-    _table('fx'            , con.read_parquet('fx_data.parquet')             , overwrite = True)
+    con.create_table('fx'            , con.read_parquet('fx_data.parquet')             , overwrite = True)
 
     con.raw_sql("""
         DROP TABLE IF EXISTS __comp_secm2;
@@ -1143,7 +1095,6 @@ def add_rf_and_exchange_data_to_temporary_sf(freq, temp_sf):
                       .join(__exchanges, how = 'left', on = ['exchg']))
     return temp_sf
 
-@measure_time
 def process_comp_sf1(freq):
     """
     Description:
