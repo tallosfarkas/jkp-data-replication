@@ -28,4 +28,4 @@ conda init
 conda activate jkp_factors
 
 # Run the Python script
-python main.py
+python Build_database/main.py
