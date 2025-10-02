@@ -507,12 +507,10 @@ def prepare_comp_sf(freq):
     Output:
         Intermediate Comp security files written by downstream helpers (no direct return).
     """
-    # populate_own('Raw_data_dfs/__firm_shares1.parquet', 'gvkey', 'datadate', 'ddate')
-    # gen_comp_dsf()
+    populate_own('Raw_data_dfs/__firm_shares1.parquet', 'gvkey', 'datadate', 'ddate')
+    gen_comp_dsf()
     if freq == 'both':
-        print('Process comp_ sf1 d')
         process_comp_sf1('d')
-        print('Process comp sf1 m')
         process_comp_sf1('m')
     else: process_comp_sf1(freq)
 
@@ -923,61 +921,69 @@ def add_primary_sec(data_path, datevar, file_name):
         Parquet at file_name with a new integer column primary_sec ∈ {0,1}.
     """
     os.system('rm -f aux_prim_sec.ddb')
-    con = ibis.duckdb.connect('aux_prim_sec.ddb', threads = os.cpu_count())
-
-    con.create_table('t1', con.read_parquet(data_path))
-    con.create_table('t2', con.read_parquet('Raw_data_dfs/__prihistrow.parquet'))
-    con.create_table('t3', con.read_parquet('Raw_data_dfs/__prihistusa.parquet'))
-    con.create_table('t4', con.read_parquet('Raw_data_dfs/__prihistcan.parquet'))
-    con.create_table('t5', con.read_parquet('Raw_data_dfs/__header.parquet'))
-
-    data       = con.table('t1')
-    prihistrow = con.table('t2')
-    prihistusa = con.table('t3')
-    prihistcan = con.table('t4')
-    header     = con.table('t5')
-
-    data = (data.join(prihistrow, how = 'left',
-                    predicates = [
-                                    data['gvkey'] == prihistrow.gvkey,
-                                    data[datevar] >= prihistrow.effdate,
-                                    ((data[datevar] <= prihistrow.thrudate) | prihistrow.thrudate.isnull())
-                                ])
-                .drop(['effdate', 'thrudate', 'gvkey_right'])
-                .join(prihistusa, how = 'left',
-                    predicates = [
-                                    _['gvkey'] == prihistusa.gvkey,
-                                    _[datevar] >= prihistusa.effdate,
-                                    ((_[datevar] <= prihistusa.thrudate) | prihistusa.thrudate.isnull())
-                                    ])
-                .drop(['effdate', 'thrudate', 'gvkey_right'])
-                .join(prihistcan, how = 'left',
-                    predicates = [
-                                    _['gvkey'] == prihistcan.gvkey,
-                                    _[datevar] >= prihistcan.effdate,
-                                    ((_[datevar] <= prihistcan.thrudate) | prihistcan.thrudate.isnull())
-                                    ])
-                .drop(['effdate', 'thrudate', 'gvkey_right'])
-                .join(header, how = 'left', predicates = [_['gvkey'] == header.gvkey])
-                .drop(['gvkey_right'])
-                .mutate(
-                        prihistrow = _.prihistrow.coalesce(_.prirow),
-                        prihistusa = _.prihistusa.coalesce(_.priusa),
-                        prihistcan = _.prihistcan.coalesce(_.prican)
-                        )
-                .distinct()
-                .mutate(
-                        primary_sec = (~(_.iid.isnull()) & ((_.iid == _.prihistrow) | (_.iid == _.prihistusa) | (_.iid == _.prihistcan)))
-                        )
-                .drop(['exchgdesc', 'prihistrow',	'prihistusa', 'prihistcan', 'prirow', 'priusa', 'prican'])
-                    .cast({'primary_sec': 'int'})
-                    .fill_null({'primary_sec': 0})
-                    .distinct(on = ['gvkey', 'iid', 'datadate'])
-                    .order_by(['gvkey', 'iid', 'datadate'])
+    con = duckdb.connect('aux_prim_sec.ddb')
+    con.execute(f"""
+        CREATE OR REPLACE TABLE __data2 AS
+        WITH data AS (
+            SELECT * FROM read_parquet('{data_path}')
+            ORDER BY gvkey, iid, datadate
+        ),
+        prihistrow AS (
+            SELECT * FROM read_parquet('Raw_data_dfs/__prihistrow.parquet')
+            ORDER BY gvkey, effdate
+        ),
+        prihistusa AS (
+            SELECT * FROM read_parquet('Raw_data_dfs/__prihistusa.parquet')
+            ORDER BY gvkey, effdate
+        ),
+        prihistcan AS (
+            SELECT * FROM read_parquet('Raw_data_dfs/__prihistcan.parquet')
+            ORDER BY gvkey, effdate
+        ),
+        header AS (
+            SELECT * FROM read_parquet('Raw_data_dfs/__header.parquet')
+            ORDER BY gvkey
+        ),
+        __data1 AS (
+            SELECT DISTINCT
+                a.*,
+                COALESCE(b.prihistrow, e.prirow)  AS prihistrow,
+                COALESCE(c.prihistusa, e.priusa)  AS prihistusa,
+                COALESCE(d.prihistcan, e.prican)  AS prihistcan
+            FROM data AS a
+            LEFT JOIN prihistrow AS b
+                ON a.gvkey = b.gvkey
+                AND a.{datevar} BETWEEN b.effdate AND COALESCE(b.thrudate, DATE '2262-04-11')
+            LEFT JOIN prihistusa AS c
+                ON a.gvkey = c.gvkey
+                AND a.{datevar} BETWEEN c.effdate AND COALESCE(c.thrudate, DATE '2262-04-11')
+            LEFT JOIN prihistcan AS d
+                ON a.gvkey = d.gvkey
+                AND a.{datevar} BETWEEN d.effdate AND COALESCE(d.thrudate, DATE '2262-04-11')
+            LEFT JOIN header AS e
+                ON a.gvkey = e.gvkey
         )
-    data.to_parquet(file_name)
-    con.disconnect()
+        SELECT
+            * EXCLUDE (prihistrow, prihistusa, prihistcan),
+            CASE
+                WHEN iid IS NOT NULL
+                    AND COALESCE(
+                        (iid = prihistrow) OR (iid = prihistusa) OR (iid = prihistcan),
+                        FALSE
+                        )
+                THEN 1
+                ELSE 0
+            END AS primary_sec
+        FROM __data1
+        ORDER BY gvkey, iid, datadate;
 
+        COPY
+            (SELECT * FROM __data2)
+        TO '{file_name}' (FORMAT parquet);
+    """)
+
+    con.close()
+    os.system('rm -f aux_prim_sec.ddb')
 def load_rf_and_exchange_data():
     """
     Description:
@@ -1120,13 +1126,12 @@ def process_comp_sf1(freq):
     """
     #Eager mode is faster here
     if freq == 'm': gen_comp_msf()
-    # __returns  = gen_returns_df(freq)
-    # __delist   = gen_delist_df(__returns)
-    # __comp_sf2 = gen_temporary_sf(freq, __returns, __delist)
-    # __comp_sf2 = add_rf_and_exchange_data_to_temporary_sf(freq, __comp_sf2)
-    # __comp_sf2.write_parquet('__comp_sf2.parquet')
-    # del __comp_sf2
-    print('Add prim sec')
+    __returns  = gen_returns_df(freq)
+    __delist   = gen_delist_df(__returns)
+    __comp_sf2 = gen_temporary_sf(freq, __returns, __delist)
+    __comp_sf2 = add_rf_and_exchange_data_to_temporary_sf(freq, __comp_sf2)
+    __comp_sf2.write_parquet('__comp_sf2.parquet')
+    del __comp_sf2
     add_primary_sec('__comp_sf2.parquet', 'datadate',f'comp_{freq}sf.parquet')
 
 def gen_MMYY_column(var, shift = None):
@@ -4892,6 +4897,7 @@ def save_full_files_and_cleanup():
     pl.scan_parquet('world_data.parquet').select(pl.all().shrink_dtype()).collect(streaming = True).write_parquet(f'World_Data/world_data.parquet', compression='zstd', compression_level = 11, statistics = False)
     pl.scan_parquet('world_data_filtered.parquet').select(pl.all().shrink_dtype()).collect(streaming = True).write_parquet(f'World_Data/world_data_filtered.parquet', compression='zstd', compression_level = 11, statistics = False)
     os.system('rm *.parquet')
+    os.system('rm *.ddb')
     os.system('rm -rf Raw_tables')
     os.system('rm -rf Raw_data_dfs')
 
