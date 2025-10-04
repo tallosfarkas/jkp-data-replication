@@ -4815,11 +4815,27 @@ def save_main_data(end_date):
               .drop('dif_aux')
               .filter((col('primary_sec') == 1) & (col('common') == 1) & (col('obs_main') == 1) & (col('exch_main') == 1) & (col('eom') <= end_date)))
     data.select(pl.all().shrink_dtype()).collect(streaming=True).write_parquet('world_data_filtered.parquet')
-    countries = pl.scan_parquet('world_data_filtered.parquet').select('excntry').unique().collect().to_numpy().flatten()
-    for i in countries:
-        print(f'Filtering data for country {i}', flush=True)
-        data = pl.scan_parquet('world_data_filtered.parquet').filter(col('excntry') == i)
-        data.collect().write_parquet(f'Characteristics/{i}.parquet', compression='zstd', compression_level = 11, statistics = False)
+
+    OUT_DIR = "Characteristics"
+    con = duckdb.connect()
+    con.execute(f"""
+    COPY (SELECT * FROM read_parquet('world_data_filtered.parquet'))
+    TO '{OUT_DIR}'
+    ( FORMAT PARQUET, COMPRESSION ZSTD, PARTITION_BY (excntry));
+    """)
+    con.close()
+    os.system(f"""
+    for d in {OUT_DIR}/excntry=*; do
+        if [ -d "$d" ]; then
+            country="${{d#*=}}"   # strip "excntry="
+            partfile=$(find "$d" -type f -name "*.parquet" | head -n1)
+            if [ -n "$partfile" ]; then
+                mv "$partfile" "{OUT_DIR}/${{country}}.parquet"
+            fi
+            rm -rf "$d"
+        fi
+    done
+    """)
 
 @measure_time
 def save_output_files():
@@ -4854,15 +4870,33 @@ def save_daily_ret():
     Output:
         'Daily_Returns/{country}.parquet' files for all countries.
     """
-    data = pl.scan_parquet('world_dsf.parquet').select(['excntry', 'id', 'date', 'me', 'ret', 'ret_exc'])
-    countries = pl.scan_parquet('world_dsf.parquet').select('excntry').unique().collect().to_numpy().flatten()
-    for i in countries:
-        if i == None:
-            print(f'Filtering data for null country', flush=True)
-            data.select(pl.all().shrink_dtype()).filter(col('excntry').is_null()).collect().write_parquet(f'Daily_Returns/null_country.parquet', compression='zstd', compression_level = 11, statistics = False)
-        else:
-            print(f'Filtering data for country {i}', flush=True)
-            data.select(pl.all().shrink_dtype()).filter(col('excntry') == i).collect().write_parquet(f'Daily_Returns/{i}.parquet', compression='zstd', compression_level = 11, statistics = False)
+    data = (pl.scan_parquet('world_dsf.parquet')
+              .select(['excntry', 'id', 'date', 'me', 'ret', 'ret_exc'])
+              .with_columns(excntry = pl.when(col('excntry').is_null()).then(pl.lit('null_country')).otherwise(col('excntry')))
+              )
+    data.collect(engine = 'streaming').write_parquet('daily_returns_temp.parquet')
+
+    OUT_DIR = "Daily_Returns"
+    con = duckdb.connect()
+    con.execute(f"""
+    COPY (SELECT * FROM read_parquet('daily_returns_temp.parquet'))
+    TO '{OUT_DIR}'
+    ( FORMAT PARQUET, COMPRESSION ZSTD, PARTITION_BY (excntry));
+    """)
+    con.close()
+    os.system(f"""
+    for d in {OUT_DIR}/excntry=*; do
+        if [ -d "$d" ]; then
+            country="${{d#*=}}"   # strip "excntry="
+            partfile=$(find "$d" -type f -name "*.parquet" | head -n1)
+            if [ -n "$partfile" ]; then
+                mv "$partfile" "{OUT_DIR}/${{country}}.parquet"
+            fi
+            rm -rf "$d"
+        fi
+    done
+    """)
+    
 @measure_time
 def save_accounting_data():
     """
@@ -5053,7 +5087,7 @@ def roll_apply_daily(stats, sfx, __min):
     aux_maps = gen_aux_maps(sfx)
     base_data = prepare_base_data(stat = stats)
     results = pl.concat([process_map_chunks(base_data, mapping, stats, sfx, __min) for mapping in aux_maps])
-    results.collect().write_parquet(f'__roll{sfx}_{stats}.parquet')
+    results.collect(engine = 'streaming').write_parquet(f'__roll{sfx}_{stats}.parquet')
 
 def gen_consecutive_lists(input_list, k):
     """
@@ -5571,11 +5605,13 @@ def mktcorr(df, sfx, __min):
         LazyFrame with f'corr{sfx}'.
     """
     df = (df.group_by(['id_int', 'group_number'])
-            .agg([pl.count('ret_exc_3l').alias('n1'),
-                pl.count('mkt_exc_3l').alias('n2'),
-                pl.corr('ret_exc_3l', 'mkt_exc_3l').alias(f'corr{sfx}')])
-            .filter((col('n1')>=__min) & (col('n2')>=__min))
-            .drop(['n1', 'n2']))
+            .agg([
+                pl.min_horizontal([pl.count('ret_exc_3l'), pl.count('mkt_exc_3l')]).alias("n"),
+                pl.corr('ret_exc_3l', 'mkt_exc_3l').alias(f'corr{sfx}')
+                ])
+            .filter(col('n') >= __min)
+            .drop('n')
+            )
     return df
 
 def dimsonbeta(df, sfx, __min):
