@@ -5457,7 +5457,7 @@ def mktrf_vol(df, sfx, __min):
         LazyFrame with f'__mktvol{sfx}'.
     """
     df = (df.group_by(['id_int', 'group_number'])
-            .agg(col('mktrf').std().alias(f'__mktvol{sfx}')))
+            .agg(col('mktrf').cast(pl.Float64).std().alias(f'__mktvol{sfx}')))
     return df
 
 def capm_ext(df, sfx, __min):
