@@ -44,7 +44,7 @@ This document provides instructions for creating a dataset based on the paper "I
      python main.py
      ```
 
-   In the initial moments of execution, you may be prompted to grant access to WRDS using two-factor authentication (2FA), such as a Duo notification. It is crucial to grant this access for the program to function. After a few seconds/minutes, you should see a confirmation message from the Python code indicating that a table has been downloaded. If this message does not appear, please check your Internet connection.
+   In the initial moments of execution, you may be prompted to grant access to WRDS using two-factor authentication (2FA), such as a Duo notification. It is crucial to grant this access for the program to function. After a few seconds/minutes, you should see a files being created in build_database/code/raw_table. If that is not the case, please check your Internet connection.
 
    After execution, you can deactivate the conda environment with:
    ```sh
