@@ -38,14 +38,7 @@ This document provides instructions for creating a dataset based on the paper *â
      ```
      Kindly follow the prompts.  
 
-        If you need to change your password or credentials, run:
-        ```sh
-        python jkp_credentials.py --reset
-        ```
-        and then re-run:
-        ```sh
-        python jkp_credentials.py
-        ```
+     Note: If you need to change your password or credentials, run `python jkp_credentials.py --reset` and then `python jkp_credentials.py`
 
 4. **Run the Script**
 
