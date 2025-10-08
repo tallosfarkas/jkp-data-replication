@@ -58,6 +58,7 @@ desktop.ini
 *.slurm.err
 *.out
 *.err
+*.txt
 *.txt~
 *~
 
