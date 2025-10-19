@@ -4824,7 +4824,11 @@ def save_main_data(end_date):
     con.execute(f"""
     COPY (SELECT * FROM read_parquet('../interim/world_data_filtered.parquet'))
     TO '{OUT_DIR}'
-    ( FORMAT PARQUET, COMPRESSION ZSTD, PARTITION_BY (excntry));
+    ( FORMAT PARQUET, 
+      COMPRESSION ZSTD, 
+      PARTITION_BY (excntry),
+      WRITE_PARTITION_COLUMNS TRUE
+      );
     """)
     con.close()
     os.system(f"""

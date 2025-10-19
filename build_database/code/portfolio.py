@@ -4,18 +4,17 @@ from datetime import date
 import numpy as np
 from statsmodels.distributions.empirical_distribution import ECDF
 
-# User Inputs
-
 # setting data path and output path
-data_path = ""
+data_path = "build_database/data/processed"
 output_path = ""
 
 
 countries = []
 # Iterate through all files in the folder
-for file in os.listdir(os.path.join(data_path, "Characteristics")):
+for file in os.listdir(os.path.join(data_path, "characteristics")):
     if file.endswith(".parquet"):
         countries.append(file.replace(".parquet", ""))
+    print(file.replace(".parquet", ""))
 
 
 # characteristics
@@ -264,7 +263,7 @@ def portfolios(
     ret_cutoffs_daily=None,  # Data frame for daily winsorization. Neccesary when wins_ret=T and daily_pf=T
 ):
     # characerteristics data
-    file_path = f"{data_path}/Characteristics/{excntry}.parquet"
+    file_path = f"{data_path}/characteristics/{excntry}.parquet"
 
     # Select the required columns
     columns = (
@@ -860,25 +859,25 @@ cluster_labels = pl.read_csv(
 
 
 # nyse_cutoffs
-nyse_size_cutoffs = pl.read_parquet(f"{data_path}/nyse_cutoffs.parquet")
+nyse_size_cutoffs = pl.read_parquet(f"{data_path}/other_output/nyse_cutoffs.parquet")
 # nyse_size_cutoffs = nyse_size_cutoffs.with_columns(pl.col("eom").cast(pl.Utf8).str.strptime(pl.Date, format="%Y%m%d").alias("eom"))
 
 # return_cutoffs
-ret_cutoffs = pl.read_parquet(f"{data_path}/return_cutoffs.parquet")
+ret_cutoffs = pl.read_parquet(f"{data_path}/other_output/return_cutoffs.parquet")
 # ret_cutoffs = ret_cutoffs.with_columns(pl.col("eom").cast(pl.Utf8).str.strptime(pl.Date, format="%Y%m%d").alias("eom"))
 ret_cutoffs = ret_cutoffs.with_columns(
     (pl.col("eom").dt.month_start().dt.offset_by("-1d")).alias("eom_lag1")
 )
 if settings["daily_pf"]:
-    ret_cutoffs_daily = pl.read_parquet(f"{data_path}/return_cutoffs_daily.parquet")
+    ret_cutoffs_daily = pl.read_parquet(f"{data_path}/other_output/return_cutoffs_daily.parquet")
 
 # market_returns
-market = pl.read_parquet(f"{data_path}/market_returns.parquet")
+market = pl.read_parquet(f"{data_path}/other_output/market_returns.parquet")
 # market = market.with_columns(pl.col("eom").cast(pl.Utf8).str.strptime(pl.Date, format="%Y%m%d").alias("eom"))
 
 # daily_market_returns
 if settings["daily_pf"]:
-    market_daily = pl.read_parquet(f"{data_path}/market_returns_daily.parquet")
+    market_daily = pl.read_parquet(f"{data_path}/other_output/market_returns_daily.parquet")
     # market_daily = market_daily.with_columns(pl.col("date").cast(pl.Utf8).str.strptime(pl.Date, format="%Y%m%d").alias("date"))
 
 
@@ -1452,11 +1451,11 @@ if settings["daily_pf"]:
 
 
 # Write NYSE size cutoffs to CSV
-nyse_size_cutoffs.write_parquet(f"{output_path}/nyse_cutoffs.parquet")
+# nyse_size_cutoffs.write_parquet(f"{output_path}/nyse_cutoffs.parquet")
 
 # Write return cutoffs to CSV
-ret_cutoffs.write_parquet(f"{output_path}/return_cutoffs.parquet")
+# ret_cutoffs.write_parquet(f"{output_path}/return_cutoffs.parquet")
 
 # Conditional block for writing daily return cutoffs
-if settings["daily_pf"]:
-    ret_cutoffs_daily.write_parquet(f"{output_path}/return_cutoffs_daily.parquet")
+# if settings["daily_pf"]:
+    # ret_cutoffs_daily.write_parquet(f"{output_path}/return_cutoffs_daily.parquet")
