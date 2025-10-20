@@ -21,7 +21,7 @@ countries = []
 for file in os.listdir(os.path.join(data_path, "characteristics")):
     if file.endswith(".parquet") and "world" not in file:
         countries.append(file.replace(".parquet", ""))
-
+countries = sorted(countries)
 
 # characteristics
 chars = [
