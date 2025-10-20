@@ -1,6 +1,7 @@
 import polars as pl
 import numpy as np
 import polars_ols as pls
+import polars_ds as pds
 import time
 import datetime
 import ibis
@@ -7312,6 +7313,7 @@ def prepare_daily(data_path, fcts_path):
             mktrf_ld1=col("mktrf").shift(-1).over(["excntry", "eom"]),
             mktrf_lg1=col("mktrf").shift(1).over(["excntry"]),
         )
+        .select(pl.all().shrink_dtype())
         .sort(["excntry", "date"])
     )
     mkt_lead_lag.collect().write_parquet("mkt_lead_lag.parquet")
@@ -7329,6 +7331,7 @@ def prepare_daily(data_path, fcts_path):
             ).over(["id_int"]),
         )
         .select(["id_int", "eom", "zero_obs", "ret_exc_3l", "mkt_exc_3l"])
+        .select(pl.all().shrink_dtype())
         .sort(["id_int", "eom"])
     )
     corr_data.collect().write_parquet("corr_data.parquet")
@@ -9322,21 +9325,16 @@ def dimsonbeta(df, sfx, __min):
     Output:
         LazyFrame with f'beta_dimson{sfx}'.
     """
-    beta_exp = (
-        col("coeffs").struct.field("mktrf")
-        + col("coeffs").struct.field("mktrf_ld1")
-        + col("coeffs").struct.field("mktrf_lg1")
-    )
+    beta_exp = col("coeffs").list.slice(0, -1).list.sum()
     df = (
         df.group_by(["id_int", "group_number"])
         .agg(
-            coeffs=pl.col("ret_exc").least_squares.ols(
+            coeffs=pds.lin_reg(
                 "mktrf",
                 "mktrf_ld1",
                 "mktrf_lg1",
-                add_intercept=True,
-                mode="coefficients",
-                solve_method="svd",
+                target="ret_exc",
+                add_bias=True,  # intercept will be the last element
             )
         )
         .select(["id_int", "group_number", beta_exp.alias(f"beta_dimson{sfx}")])
