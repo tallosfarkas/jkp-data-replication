@@ -25,9 +25,9 @@ This document provides instructions for creating a dataset based on the paper *â
    - Download the `requirements.txt` file and navigate to the directory where it is stored.
    - Run the following commands:
      ```sh
-     conda create --name jkp_factors python=3.11.11
+     conda create --name jkp_factors python=3.11.11 -y
      conda activate jkp_factors
-     conda install -c conda-forge postgresql
+     conda install -c conda-forge postgresql jupyter deno pandoc quarto -y
      pip install -r requirements.txt
      ```
 3. **Input WRDS Credentials**
@@ -75,7 +75,7 @@ At the end of the routine, you will find the output in:
 ```
 SAS-Python-Migrate/build_database/data/processed/
 ```
-Please see the release notes for a description of the output files.
+Please see the release notes (`release_notes.html`) for a description of the output files.
 
 ### Notes
 
@@ -90,6 +90,13 @@ end_date = pl.datetime(1992, 5, 6)
 ```
 
 A wide array of options for portfolios is available in the source code. For example, characteristic managed portfolios. Please refer to the SAS version of the code for more extensive documentation of the portfolio code since the Python version replicates the R code and there are no major changes in the structure of the code. 
+
+To regenerate the release notes `html` file:
+1. Activate the `jkp_factors` conda environment
+2. Navigate do `SAS-Python-Migrate` and run: 
+   ```sh
+  quarto render release_notes_files/jkp_factors_migration.qmd --embed-resources && mv release_notes_files/jkp_factors_migration.html release_notes.html
+   ```
 
 ## Hardware Requirements
 
