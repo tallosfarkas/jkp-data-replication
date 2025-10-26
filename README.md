@@ -94,9 +94,9 @@ A wide array of options for portfolios is available in the source code. For exam
 To regenerate the release notes `html` file:
 1. Activate the `jkp_factors` conda environment
 2. Navigate do `SAS-Python-Migrate` and run: 
-   ```sh
+```sh
   quarto render release_notes_files/jkp_factors_migration.qmd --embed-resources && mv release_notes_files/jkp_factors_migration.html release_notes.html
-   ```
+```
 
 ## Hardware Requirements
 
