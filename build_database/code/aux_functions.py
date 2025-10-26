@@ -6851,12 +6851,16 @@ def sort_ff_style(char, min_stocks_bp, min_stocks_pf, date_col, data, sf):
     ).alias("char_pf")
     bp_stocks = (
         data.filter(c1)
-        .group_by(["eom", "excntry_l"])
-        .agg(
-            n=pl.len().alias("n"),
-            bp_p30=perc_exp(f"{char}_l", lambda x: perc_method(x, 0.3)),
-            bp_p70=perc_exp(f"{char}_l", lambda x: perc_method(x, 0.7)),
-        )
+            .sql(f"""
+                SELECT
+                    eom,
+                    excntry_l,
+                    COUNT(*) AS n,
+                    quantile({char}_l, 0.3) AS bp_p30,
+                    quantile({char}_l, 0.7) AS bp_p70
+                FROM self
+                GROUP BY eom, excntry_l
+            """)
     )
     data = (
         data.join(bp_stocks, how="left", on=["excntry_l", "eom"])
