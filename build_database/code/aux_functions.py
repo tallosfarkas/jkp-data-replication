@@ -1959,8 +1959,6 @@ def crsp_industry():
     )
     permno0.collect().write_parquet("crsp_ind.parquet")
 
-
-@measure_time
 def comp_hgics(lib):
     """
     Description:
@@ -2008,7 +2006,6 @@ def comp_hgics(lib):
     data.write_parquet(paths["output"][lib])
 
 
-@measure_time
 def hgics_join():
     """
     Description:
@@ -2038,8 +2035,6 @@ def hgics_join():
     )
     gjoin.collect().write_parquet("comp_hgics.parquet")
 
-
-@measure_time
 def comp_sic_naics():
     """
     Description:
@@ -3643,10 +3638,6 @@ def standardized_accounting_data(
     # Variables in avars_other are not measured in currency units, and only available in annual data
     avars_other = ["emp"]
     avars = avars_inc + avars_cf + avars_bs
-    print(
-        f"INCOME STATEMENT: {len(avars_inc)} || CASH FLOW STATEMENT: {len(avars_cf)} || BALANCE SHEET: {len(avars_bs)} || OTHER: {len(avars_other)}",
-        flush=True,
-    )
     # finding which variables of interest are available in the quarterly data
     combined_columns = g_fundq_cols + fundq_cols
     qvars_q = list(
