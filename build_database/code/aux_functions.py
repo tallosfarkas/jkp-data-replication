@@ -3123,37 +3123,38 @@ def add_cutoffs_and_winsorize(df, wins_data_path, group_vars, dt_col):
 
     result = ctx.execute(f"""
     SELECT 
-        a.* EXCLUDE (ret, ret_local, ret_exc),
-        CASE
-            WHEN a.source_crsp = 0
-            AND a.ret IS NOT NULL
-            AND a.ret > b.ret_99_9 THEN b.ret_99_9
-            WHEN a.source_crsp = 0
-            AND a.ret IS NOT NULL
-            AND a.ret < b.ret_0_1 THEN b.ret_0_1
-            ELSE a.ret
-        END AS ret,
-        
-        CASE
-            WHEN a.source_crsp = 0
-            AND a.ret_local IS NOT NULL
-            AND a.ret_local > b.ret_local_99_9 THEN b.ret_local_99_9
-            WHEN a.source_crsp = 0
-            AND a.ret_local IS NOT NULL
-            AND a.ret_local < b.ret_local_0_1 THEN b.ret_local_0_1
-            ELSE a.ret_local
-        END AS ret_local,
-        
-        CASE
-            WHEN a.source_crsp = 0
-            AND a.ret_exc IS NOT NULL
-            AND a.ret_exc > b.ret_exc_99_9 THEN b.ret_exc_99_9
-            WHEN a.source_crsp = 0
-            AND a.ret_exc IS NOT NULL
-            AND a.ret_exc < b.ret_exc_0_1 THEN b.ret_exc_0_1
-            ELSE a.ret_exc
-        END AS ret_exc
-
+        a.*,
+        REPLACE(
+            CASE
+                WHEN a.source_crsp = 0
+                AND a.ret IS NOT NULL
+                AND a.ret > b.ret_99_9 THEN b.ret_99_9
+                WHEN a.source_crsp = 0
+                AND a.ret IS NOT NULL
+                AND a.ret < b.ret_0_1 THEN b.ret_0_1
+                ELSE a.ret
+            END AS ret,
+            
+            CASE
+                WHEN a.source_crsp = 0
+                AND a.ret_local IS NOT NULL
+                AND a.ret_local > b.ret_local_99_9 THEN b.ret_local_99_9
+                WHEN a.source_crsp = 0
+                AND a.ret_local IS NOT NULL
+                AND a.ret_local < b.ret_local_0_1 THEN b.ret_local_0_1
+                ELSE a.ret_local
+            END AS ret_local,
+            
+            CASE
+                WHEN a.source_crsp = 0
+                AND a.ret_exc IS NOT NULL
+                AND a.ret_exc > b.ret_exc_99_9 THEN b.ret_exc_99_9
+                WHEN a.source_crsp = 0
+                AND a.ret_exc IS NOT NULL
+                AND a.ret_exc < b.ret_exc_0_1 THEN b.ret_exc_0_1
+                ELSE a.ret_exc
+            END AS ret_exc
+        )
     FROM df AS a
     LEFT JOIN wins_data AS b
     USING ({group_vars})
