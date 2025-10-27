@@ -3115,7 +3115,7 @@ def add_cutoffs_and_winsorize(df, wins_data_path, group_vars, dt_col):
     Output:
         Polars LazyFrame/DataFrame with winsorized returns and cutoff columns joined.
     """
-    df = df.with_columns(year=col('eom').dt.year(), month=col('eom').dt.month())
+    df = df.with_columns(year=col(dt_col).dt.year(), month=col(dt_col).dt.month())
     wins_data = pl.scan_parquet(wins_data_path)
     ctx = pl.SQLContext()
     ctx.register("df", df)
