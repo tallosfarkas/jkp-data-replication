@@ -28,7 +28,7 @@ conda init
 conda activate jkp_factors
 
 # Create char data
-python code/main.py
+uv run python code/main.py
 
 # Create portfolio data
-python code/portfolio.py
+uv run python code/portfolio.py

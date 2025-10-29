@@ -7,7 +7,7 @@ This document provides instructions for creating a dataset based on the paper *â
 ### Prerequisites
 
 - Obtain your WRDS credentials.
-- Ensure you have Conda or Miniconda installed on your system.
+- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) installed on your system.
 
 ### Steps
 
@@ -17,28 +17,15 @@ This document provides instructions for creating a dataset based on the paper *â
      ```sh
      git clone git@github.com:bkelly-lab/SAS-Python-Migrate.git
      ```
-     
-2. **Set up a Conda environment and install the packages in the `requirements.txt` file**
-
-   The sample instructions below may vary depending on your Conda installation.
-
-   - Navigate to `SAS-Python-Migrate/`
-   - Run the following commands:
-     ```sh
-     conda create --name jkp_factors python=3.11.11 -y
-     conda activate jkp_factors
-     conda install -c conda-forge postgresql jupyter deno pandoc quarto -y
-     pip install -r requirements.txt
-     ```
-3. **Input WRDS Credentials**
+2. **Input WRDS Credentials**
 
    - To save your WRDS credentials, run:
      ```sh
-     python build_database/code/wrds_credentials.py
+     uv run python code/wrds_credentials.py
      ```
      Kindly follow the prompts.  
 
-     Note: If you need to change your password or credentials, run `python build_database/code/wrds_credentials.py --reset` and then `python build_database/code/wrds_credentials.py`
+     Note: If you need to change your password or credentials, run `uv run python code/wrds_credentials.py --reset` and then `uv run python code/wrds_credentials.py`
 
 4. **Run the Script**
 
@@ -47,17 +34,17 @@ This document provides instructions for creating a dataset based on the paper *â
 
    - Run:
      ```sh
-     sbatch build_database/slurm/submit_job_som_hpc.slurm
+     sbatch slurm/submit_job_som_hpc.slurm
      ```
      (This will create the characteristics and the portfolio datasets).
 
      In interactive mode, run:
      ```sh
-     python build_database/code/main.py
+     uv run python code/main.py
      ```
      This will create the characteristics dataset at stock-level. To get the portfolio return series, run:
      ```sh
-     python build_database/code/portfolio.py
+     uv run python code/portfolio.py
      ```
 
    During the initial execution, you may be prompted to grant access to WRDS using two-factor authentication (2FA), such as a Duo notification.  
@@ -66,14 +53,9 @@ This document provides instructions for creating a dataset based on the paper *â
    After a few seconds or minutes, you should see files being created in `build_database/code/raw_table`.  
    If that is not the case, please check your internet connection or credentials.
 
-   After execution, deactivate the Conda environment:
-   ```sh
-   conda deactivate
-   ```
-
 At the end of the routine, you will find the output in:
 ```
-build_database/data/processed/
+data/processed/
 ```
 Please see the release notes (`release_notes.html`) for a description of the output files.
 
@@ -92,7 +74,14 @@ end_date = pl.datetime(1992, 5, 6)
 A wide array of options for portfolios is available in the source code. For example, characteristic managed portfolios. Please refer to the SAS version of the code for more extensive documentation of the portfolio code since the Python version replicates the R code and there are no major changes in the structure of the code. 
 
 To regenerate the release notes `html` file:
-1. Activate the `jkp_factors` conda environment
+1. Navigate to `documentation/` and run:
+    ```sh
+     conda create --name jkp_factors python=3.11.11 -y
+     conda activate jkp_factors
+     conda install -c conda-forge postgresql jupyter deno pandoc quarto -y
+     pip install -r requirements.txt
+     conda activate jkp_factors
+     ```
 2. Run: 
 ```sh
   quarto render release_notes_files/jkp_factors_migration.qmd --embed-resources && mv release_notes_files/jkp_factors_migration.html release_notes.html
