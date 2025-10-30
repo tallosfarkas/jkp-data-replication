@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J jkpfactors
-#SBATCH -o build_database/slurm/output_jkp_%j.txt
-#SBATCH -e build_database/slurm/error_jkp_%j.txt
+#SBATCH -o slurm/output_jkp_%j.txt
+#SBATCH -e slurm/error_jkp_%j.txt
 #SBATCH --partition=gpunormal
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=128
