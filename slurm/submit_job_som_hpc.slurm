@@ -23,10 +23,6 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
-# Activate the conda environment
-conda init
-conda activate jkp_factors
-
 # Create char data
 uv run python code/main.py
 
