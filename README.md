@@ -30,6 +30,7 @@ This document provides instructions for creating a dataset based on the paper *â
 4. **Run the Script**
 
    - A sample Slurm script is provided to run the Python routine on a cluster with a Slurm scheduler.
+   - Before running the following set of commands, please make sure you are in `SAS-Python-Migrate/`
 
    - Run:
      ```sh
@@ -49,7 +50,7 @@ This document provides instructions for creating a dataset based on the paper *â
    During the initial execution, you may be prompted to grant access to WRDS using two-factor authentication (2FA), such as a Duo notification.  
    It is crucial to approve this request for the program to function correctly.
 
-   After a few seconds or minutes, you should see files being created in `build_database/code/raw_table`.  
+   After a few seconds or minutes, you should see files being created in `code/raw_table`.  
    If that is not the case, please check your internet connection or credentials.
 
 At the end of the routine, you will find the output in:
@@ -88,4 +89,4 @@ To regenerate the release notes `html` file:
 
 ## Hardware Requirements
 
-We use a server with **450 GB RAM** and **128 CPU cores**. Running the routine takes about five and a half hours.
+We use a server with **450 GB RAM** and **128 CPU cores**. Running the routine takes about 4 hours.
