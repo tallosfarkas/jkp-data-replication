@@ -3269,11 +3269,11 @@ def market_returns(data_path, freq, wins_comp, wins_data_path):
             dolvol_lag1=col("dolvol").shift(1).over("id"),
         )
     )
-    __common_stocks.sink_parquet("common_stocks1.parquet")
     if wins_comp == 1:
         __common_stocks = add_cutoffs_and_winsorize(
             __common_stocks, wins_data_path, group_vars, dt_col
         )
+    __common_stocks.sink_parquet("common_stocks2.parquet")
     __common_stocks = apply_stock_filter_and_compute_indexes(
         __common_stocks, dt_col, max_date_lag
     )
