@@ -3785,13 +3785,13 @@ def standardized_accounting_data(
     if coverage == "world":
         __wfunda = pl.concat([__gfunda, __funda], how="diagonal_relaxed").filter(
             (pl.len().over(["gvkey", "datadate"]) == 1)
-            | ((pl.len().over(["gvkey", "datadate"]) == 2) & (col("source") == "NA"))
+            | ((pl.len().over(["gvkey", "datadate"]) == 2) & (col("source") == "GLOBAL"))
         )
         __wfundq = pl.concat([__gfundq, __fundq], how="diagonal_relaxed").filter(
             (pl.len().over(["gvkey", "fyr", "fyearq", "fqtr"]) == 1)
             | (
                 (pl.len().over(["gvkey", "fyr", "fyearq", "fqtr"]) == 2)
-                & (col("source") == "NA")
+                & (col("source") == "GLOBAL")
             )
         )
     else:
@@ -3922,10 +3922,7 @@ def standardized_accounting_data(
                 **{"curcdq": "curcd"},
             }
         )
-        .sort(["gvkey", "datadate", "fyr", "source"])
-        .unique(
-            ["gvkey", "datadate", "fyr"], keep="first"
-        )  # This means we prefer source = GLOBAL rather than NA for duplicate observations
+        .unique(["gvkey", "datadate", "fyr"])
         .sort(["gvkey", "datadate", "fyr"])
         .unique(["gvkey", "datadate"], keep="last")
         .drop(["fyr", "fyearq", "fqtr"])
