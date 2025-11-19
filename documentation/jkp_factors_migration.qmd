@@ -298,6 +298,7 @@ n, bins, patches = ax.hist(
     corr_df["spearman r-corr"],
     bins=10,
     density=False,
+    color="royalblue",
     edgecolor="black",
     linewidth=0.5,
     alpha=0.8,
