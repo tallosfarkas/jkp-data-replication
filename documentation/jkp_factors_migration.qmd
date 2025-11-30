@@ -366,6 +366,6 @@ A more comprehensive comparison can be found in the `documentation/data/sas_vs_p
 
 **Main sources of differences:**
 
-- **Numerical precision:** Small differences in floating-point behavior between SAS and Python can flip inequality evaluations at the margin as well as result in differences in computation of the characteristics.
+- **Numerical precision:** Differences in floating-point handling between SAS and Python can alter inequality evaluations and calculated values. In the new Python code, 'div' and 'eqnpo' characteristics in the `market_chars_monthly` subroutine are coerced to 0 if their magnitude is below 1e-5 to address arithmetic noise. This adjustment also accounts for some deviations from the SAS/R baselines.
 - **Data revisions:** Underlying data may have changed.
 - **Algorithmic adjustments:** Differences due to updates in `standardized_accounting_data` for improved duplicate handling.

@@ -6620,18 +6620,18 @@ def market_chars_monthly(data_path, market_ret_path, local_currency=False):
     data = (
         data.with_columns(
             [
-                pl.when(col(var) < 1e-10).then(0.0).otherwise(col(var)).alias(var)
+                pl.when(col(var) < 1e-5).then(0.0).otherwise(col(var)).alias(var)
                 for var in data.collect_schema().names()
                 if var.startswith("div") and var.endswith("me")
             ]
-        )  # Change to 0 when(col(var) < 1e-10) then 0. to match SAS precision
+        )
         .with_columns(
             [
-                pl.when(col(var).abs() < 1e-10).then(0.0).otherwise(col(var)).alias(var)
+                pl.when(col(var).abs() < 1e-5).then(0.0).otherwise(col(var)).alias(var)
                 for var in data.collect_schema().names()
                 if var.startswith("eqnpo")
             ]
-        )  # Change to 0 when(col(var) < 1e-10) then 0. to match SAS precision
+        )
         .select(
             [
                 "id",
