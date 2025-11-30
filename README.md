@@ -57,7 +57,7 @@ At the end of the routine, you will find the output in:
 ```
 data/processed/
 ```
-Please see the release notes (`documentation/release_notes.html`) for a description of the output files.
+Please see the release notes (`documentation/release_notes.html`) for a description of the output files. (Please render the quarto file locally to be able to access all features. See notes below).
 
 ### Notes
 

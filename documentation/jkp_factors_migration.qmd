@@ -283,8 +283,7 @@ Overall, the mean and standard deviation of the factor returns are close to thos
 
 ## Comparison of characteristics at stock level
 
-At a more granular level, we can also compare the correlation of the characteristics produced by the SAS portion of the previous version of the code and Python. 
-For that purpose, we compute the Spearman rank correlation of each of the characteristics. 
+At a more granular level, we can also compare the correlation of the characteristics produced by the SAS portion of the previous version of the code and Python. For that purpose, we compute the Spearman rank correlation of each of the characteristics. 
 
 The plot below shows a histogram of the rank correlation:
 ```{python}
@@ -305,7 +304,7 @@ n, bins, patches = ax.hist(
 )
 
 # X limits
-ax.set_xlim(0.7, 1.01)
+ax.set_xlim(0.994, 1.0005)
 
 # Labels & title
 ax.set_xlabel(r"$\rho$", fontsize=14)
@@ -361,11 +360,45 @@ ax.set_yscale("log")
 fig.tight_layout()
 plt.show()
 ```
-What this shows is that most characteristics can be used to sort stocks, and the resulting portfolios are effectively identical to those produced in SAS. There are only three characteristics with a rank correlation below 0.99: eqnpo_1m, eqnpo_3m, and eqnpo_12m. In these cases, we found that small differences in numerical precision affect the output. However, other statistical measures—such as the mean and higher-order moments of the distributions—indicate that the results align very closely between SAS and Python.
-A more comprehensive comparison can be found in the `documentation/data/sas_vs_py_summ_stats.parquet` file, which includes distributional comparisons for all characteristics across the global sample (corresponding to `world_data_filtered.parquet`).
+What this shows is that if characteristics are used to sort stocks, the resulting portfolios should be roughly identical to those produced in SAS.
+
+The following table shows a more detailed comparison of the distribution of the characteristics produced by SAS/R and Python.
+
+```{python}
+import pandas as pd
+from itables import init_notebook_mode, show
+
+# Make DataFrames render as interactive tables
+init_notebook_mode(all_interactive=True)
+
+# Read the Parquet file
+df = pd.read_parquet("data/sas_vs_py_summ_stats.parquet").sort_values(['spearman r-corr', 'characteristic'], ascending = [False, False])
+
+# Remove the index (reset and drop)
+df = df.reset_index(drop=True)
+
+# Show an interactive, scrollable table
+show(
+    df,
+    scrollY="400px",   # vertical scroll area
+    scrollX=True,      # horizontal scroll
+    #paging=True,       # enable paging
+    #maxBytes=0         # <-- disable downsampling so you see all rows/cols
+)
+```
+For every characteristic, the table reports Pearson and Spearman correlations between the output of the two pipelines (SAS/R and Python), followed by their respective means, standard deviations, skewness, kurtosis, and key quantiles (1st percentile, 25th percentile, median, 75th percentile, and 99th percentile). 
+
+The underlying data for the comparison is available here:
+[`sas_vs_py_summ_stats.parquet`](data/sas_vs_py_summ_stats.parquet).
+
+There are only 2 characteristics with Pearson correlation lower than 95%: 'resff3_6_1' and 'resff3_12_1'. Looking at rank correlation and other distributional measures, we can see that even if the Pearson correlation is small, the distributions align closely together and the difference in moments and correlations is due to outliers.
+
+In the new Python code, the 'div' and 'eqnpo' characteristics in the `market_chars_monthly` subroutine are coerced to 0 whenever their magnitude falls below 1e-5, in order to eliminate arithmetic noise. 
+
+For a fair comparison of characteristic outputs, we have likewise set 'div' and 'eqnpo' to 0 in the SAS results whenever their magnitued is smaller than 1e-5. However, note that the portfolio return comparisons shown at the beginning were made using the previous SAS output, before applying the zero-floor adjustments to 'div' and 'eqnpo'.
 
 **Main sources of differences:**
 
-- **Numerical precision:** Differences in floating-point handling between SAS and Python can alter inequality evaluations and calculated values. In the new Python code, 'div' and 'eqnpo' characteristics in the `market_chars_monthly` subroutine are coerced to 0 if their magnitude is below 1e-5 to address arithmetic noise. This adjustment also accounts for some deviations from the SAS/R baselines.
+- **Numerical precision:** Differences in floating-point handling between SAS and Python can alter inequality evaluations and calculated values.
 - **Data revisions:** Underlying data may have changed.
 - **Algorithmic adjustments:** Differences due to updates in `standardized_accounting_data` for improved duplicate handling.
