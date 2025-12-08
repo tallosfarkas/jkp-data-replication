@@ -432,9 +432,9 @@ for label in [p[0] for p in portfolios]:
         sub = inv[inv["portfolio"] == label]
         plt.step(sub["proportion"], sub["corr"], where="post", label=label)
 plt.axhline(1, color="k", linestyle="--", linewidth=1, alpha=0.6)
-plt.xlabel("Proportion")
-plt.ylabel("Correlation (SAS vs Python)")
-plt.title("Inverse CDF of correlations by portfolio type")
+plt.xlabel("Proportion", fontsize=14)
+plt.ylabel("Correlation (SAS vs Python)", fontsize=14)
+plt.title("Inverse CDF of correlations", fontsize=16)
 plt.xlim(0, 1)
 plt.ylim(-1, 1.1)
 plt.legend(title="Portfolio")
