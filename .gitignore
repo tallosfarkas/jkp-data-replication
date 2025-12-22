@@ -40,10 +40,13 @@ env/
 *.sqlite
 outputs/
 output/
-build_database/data/*
-!build_database/data/.gitkeep
-!build_database/data/**/
-!build_database/data/**/.gitkeep
+data/*
+!data/.gitkeep
+!data/factor_details.xlsx
+!data/country_classification.xlsx
+!data/cluster_labels.csv
+!data/**/
+!data/**/.gitkeep
 # ==========================================
 # OS-specific junk
 # ==========================================
