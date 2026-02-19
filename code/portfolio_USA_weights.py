@@ -16,171 +16,53 @@ warnings.filterwarnings(
 data_path = "data/processed"
 output_path = "data/processed/portfolios"
 
-countries = []
-# Iterate through all files in the folder
-for file in os.listdir(os.path.join(data_path, "characteristics")):
-    if file.endswith(".parquet") and "world" not in file:
-        countries.append(file.replace(".parquet", ""))
-countries = sorted(countries)
+countries = ['USA']
 
 # characteristics
+# characteristics filtered for QFin Lab replication
 chars = [
-    "age",
-    "aliq_at",
-    "aliq_mat",
-    "ami_126d",
-    "at_be",
-    "at_gr1",
-    "at_me",
-    "at_turnover",
-    "be_gr1a",
-    "be_me",
-    "beta_60m",
-    "beta_dimson_21d",
-    "betabab_1260d",
-    "betadown_252d",
-    "bev_mev",
-    "bidaskhl_21d",
-    "capex_abn",
-    "capx_gr1",
-    "capx_gr2",
-    "capx_gr3",
-    "cash_at",
-    "chcsho_12m",
-    "coa_gr1a",
-    "col_gr1a",
-    "cop_at",
-    "cop_atl1",
-    "corr_1260d",
-    "coskew_21d",
-    "cowc_gr1a",
-    "dbnetis_at",
-    "debt_gr3",
-    "debt_me",
-    "dgp_dsale",
-    "div12m_me",
-    "dolvol_126d",
-    "dolvol_var_126d",
-    "dsale_dinv",
-    "dsale_drec",
-    "dsale_dsga",
-    "earnings_variability",
-    "ebit_bev",
-    "ebit_sale",
-    "ebitda_mev",
-    "emp_gr1",
-    "eq_dur",
-    "eqnetis_at",
-    "eqnpo_12m",
-    "eqnpo_me",
-    "eqpo_me",
-    "f_score",
-    "fcf_me",
-    "fnl_gr1a",
-    "gp_at",
-    "gp_atl1",
-    "ival_me",
-    "inv_gr1",
-    "inv_gr1a",
-    "iskew_capm_21d",
-    "iskew_ff3_21d",
-    "iskew_hxz4_21d",
-    "ivol_capm_21d",
-    "ivol_capm_252d",
-    "ivol_ff3_21d",
-    "ivol_hxz4_21d",
-    "kz_index",
-    "lnoa_gr1a",
-    "lti_gr1a",
-    "market_equity",
-    "mispricing_mgmt",
-    "mispricing_perf",
-    "ncoa_gr1a",
-    "ncol_gr1a",
-    "netdebt_me",
-    "netis_at",
-    "nfna_gr1a",
-    "ni_ar1",
-    "ni_be",
-    "ni_inc8q",
-    "ni_ivol",
-    "ni_me",
-    "niq_at",
-    "niq_at_chg1",
-    "niq_be",
-    "niq_be_chg1",
-    "niq_su",
-    "nncoa_gr1a",
-    "noa_at",
-    "noa_gr1a",
-    "o_score",
-    "oaccruals_at",
-    "oaccruals_ni",
-    "ocf_at",
-    "ocf_at_chg1",
-    "ocf_me",
-    "ocfq_saleq_std",
-    "op_at",
-    "op_atl1",
-    "ope_be",
-    "ope_bel1",
-    "opex_at",
-    "pi_nix",
-    "ppeinv_gr1a",
-    "prc",
-    "prc_highprc_252d",
-    "qmj",
-    "qmj_growth",
-    "qmj_prof",
-    "qmj_safety",
-    "rd_me",
-    "rd_sale",
-    "rd5_at",
-    "resff3_12_1",
-    "resff3_6_1",
-    "ret_1_0",
-    "ret_12_1",
-    "ret_12_7",
-    "ret_3_1",
-    "ret_6_1",
-    "ret_60_12",
-    "ret_9_1",
-    "rmax1_21d",
-    "rmax5_21d",
-    "rmax5_rvol_21d",
-    "rskew_21d",
-    "rvol_21d",
-    "sale_bev",
-    "sale_emp_gr1",
-    "sale_gr1",
-    "sale_gr3",
-    "sale_me",
-    "saleq_gr1",
-    "saleq_su",
-    "seas_1_1an",
-    "seas_1_1na",
-    "seas_11_15an",
-    "seas_11_15na",
-    "seas_16_20an",
-    "seas_16_20na",
-    "seas_2_5an",
-    "seas_2_5na",
-    "seas_6_10an",
-    "seas_6_10na",
-    "sti_gr1a",
-    "taccruals_at",
-    "taccruals_ni",
-    "tangibility",
-    "tax_gr1a",
-    "turnover_126d",
-    "turnover_var_126d",
-    "z_score",
-    "zero_trades_126d",
-    "zero_trades_21d",
-    "zero_trades_252d",
+    "age",              # Firm_Age
+    "ami_126d",         # Amihud_Illiquidity
+    "at_be",            # Leverage_Factor (Assets / Book Equity)
+    "at_gr1",           # Asset_Growth_CMA
+    "at_turnover",      # Change_in_Asset_Turnover
+    "be_me",            # Book_to_Market_HML
+    "beta_60m",         # ADDED: Market Beta (Standard CAPM Beta is usually needed for alphas)
+    "betabab_1260d",    # Low_Beta_BAB
+    "capex_abn",        # Abnormal_Investment
+    "capx_gr1",         # CAPX_Growth_Rate
+    "chcsho_12m",       # One_Year_Share_Issuance
+    "cowc_gr1a",        # Net_Working_Capital_Changes
+    "dbnetis_at",       # Debt_Issuance_Factor
+    "dolvol_126d",      # High_Volume_Premium
+    "dsale_dinv",       # Growth_in_Sales_Inventory
+    "ebit_sale",        # Profit_Margin
+    "ebitda_mev",       # Enterprise_Multiple
+    "f_score",          # Piotroski_F_Score
+    "gp_at",            # Gross_Profitability
+    "inv_gr1",          # Growth_in_Inventory
+    "ivol_ff3_21d",     # Residual_Variance_RVAR
+    "market_equity",    # Size_SMB
+    "netis_at",         # Total_External_Financing
+    "ni_be",            # Return_on_Equity
+    "ni_me",            # Earnings_to_Price
+    "niq_at",           # Return_on_Assets
+    "noa_at",           # Net_Operating_Assets
+    "o_score",          # Ohlson_O_Score
+    "oaccruals_at",     # Accruals_Factor
+    "ocf_me",           # Cash_Flow_to_Price
+    "ope_be",           # Operating_Profitability_RMW
+    "prc",              # Nominal_Price
+    "qmj",              # Quality_Minus_Junk_QMJ
+    "ret_1_0",          # ADDED: Short Term Reversal (Critical control)
+    "ret_12_1",         # ADDED: Standard Momentum (MOM) - CRITICAL FOR BASELINE
+    "ret_60_12",        # Long_Term_Reversals_LTREV
+    "sale_gr1",         # Sales_Growth
+    "sale_me",          # Sales_to_Price
+    "z_score",          # Altman_Z_Score
 ]
 
-# a dictionary which has the parameters for constructing portfolios.
+# a dictionary which has the parameters for constructing portfolios
 settings = {
     "end_date": date(2025, 12, 31),
     "pfs": 3,
@@ -533,6 +415,35 @@ def portfolios(
                 .clip(lower_bound=1, upper_bound=pfs)
                 .alias("pf")
             )
+		# --- START MODIFICATION: EXTRACT CONSTITUENT WEIGHTS ---
+            # Filter for Long (Top Portfolio) and Short (Bottom Portfolio) only
+            # pf=1 is the lowest bin, pf=pfs (e.g., 3 or 10) is the highest bin
+            weights_df = sub.filter(pl.col("pf").is_in([1, pfs]))
+            
+            # Calculate VW_CAP weights relative to that specific portfolio bin
+            weights_df = weights_df.with_columns(
+                (pl.col("me_cap") / pl.col("me_cap").sum().over(["eom", "pf"])).alias("weight")
+            )
+            
+            # Assign Leg Direction: +1 for Top Bin, -1 for Bottom Bin
+            # NOTE: You must multiply this by the factor direction from factor_details.xlsx later!
+            weights_df = weights_df.with_columns(
+                pl.when(pl.col("pf") == pfs).then(pl.lit(1))
+                .otherwise(pl.lit(-1)).cast(pl.Int8).alias("leg")
+            )
+
+            # Select only essential columns to save memory
+            weights_df = weights_df.select([
+                pl.lit(x).alias("characteristic"),
+                "id", 
+                "eom", 
+                "weight", 
+                "leg" # +1 or -1
+            ])
+            
+            # Store in the output dictionary
+            op["weights"] = weights_df.collect()
+            # --- END MODIFICATION ---
 
             pf_returns = sub.group_by(["pf", "eom"]).agg(
                 [
@@ -639,7 +550,17 @@ def portfolios(
             char_pfs.append(op)
 
     output = {}
-
+# ... existing output aggregation ...
+    
+    # Aggregate weights
+    if len([op["weights"] for op in char_pfs if "weights" in op]) > 0:
+        output["weights"] = pl.concat([op["weights"] for op in char_pfs if "weights" in op])
+        
+        # Add country info (USA)
+        if output["weights"].height > 0:
+            output["weights"] = output["weights"].with_columns(
+                pl.lit(excntry).str.to_uppercase().alias("excntry")
+            )
     # Aggregate pf_returns
     if len([op["pf_returns"] for op in char_pfs]) > 0:
         output["pf_returns"] = pl.concat([op["pf_returns"] for op in char_pfs])
@@ -820,7 +741,7 @@ print(
 # Read Factor details from Excel file
 char_info = (
     pl.read_excel(
-        "https://github.com/bkelly-lab/ReplicationCrisis/raw/master/GlobalFactors/Factor%20Details.xlsx",
+        "data/factor_details.xlsx",
         sheet_name="details",
     )
     .filter(pl.col("abr_jkp").is_not_null())
@@ -831,7 +752,7 @@ char_info = (
 
 # Read country classification details from Excel file
 country_classification = pl.read_excel(
-    "https://github.com/bkelly-lab/ReplicationCrisis/raw/master/GlobalFactors/Country%20Classification.xlsx",
+    "data/country_classification.xlsx",
     sheet_name="countries",
 )
 
@@ -873,7 +794,7 @@ regions = pl.DataFrame(
 
 # Read cluster lables details from Excel file
 cluster_labels = pl.read_csv(
-    "https://raw.githubusercontent.com/bkelly-lab/ReplicationCrisis/refs/heads/master/GlobalFactors/Cluster%20Labels.csv",
+    "data/cluster_labels.csv",
     infer_schema_length=int(1e10),
 )
 
@@ -1370,6 +1291,44 @@ if settings["daily_pf"]:
             f"{output_path}/clusters_daily.parquet"
         )
 
+
+
+
+
+
+
+# ... existing write_parquet calls ...
+
+# Save Single Stock Constituent Weights
+if "portfolio_data" in globals():
+    # Extract weights from the nested dictionary structure
+    all_weights_list = [
+        sub_data["weights"] 
+        for sub_key, sub_data in portfolio_data.items() 
+        if sub_data and "weights" in sub_data
+    ]
+    
+    if all_weights_list:
+        print("Saving constituent weights...", flush=True)
+        all_weights = pl.concat(all_weights_list)
+        
+        # Filter by date
+        all_weights = all_weights.filter(pl.col("eom") <= settings["end_date"])
+        
+        # Save to parquet
+        all_weights.write_parquet(f"{output_path}/usa_factor_weights.parquet")
+        print(f"Weights saved to {output_path}/usa_factor_weights.parquet")
+
+print(
+    f"End            : {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}",
+    flush=True,
+)
+
+
+
+
+
+
 if settings["ind_pf"]:
     if "gics_returns" in globals() and gics_returns is not None:
         gics_returns.filter(pl.col("eom") <= settings["end_date"]).write_parquet(
@@ -1480,3 +1439,4 @@ print(
     f"End            : {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}",
     flush=True,
 )
+

@@ -64,7 +64,6 @@ desktop.ini
 *.txt
 *.txt~
 *~
-*.slurm
 
 # macOS clutter
 .DS_Store
