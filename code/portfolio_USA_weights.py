@@ -68,8 +68,12 @@ settings = {
     "pfs": 3,
     "source": ["CRSP", "COMPUSTAT"],
     "wins_ret": True,
-    "bps": "non_mc",
-    "bp_min_n": 10,
+    # Change 1 — JKP/FF methodology fix
+    # "nyse": breakpoints set using NYSE stocks only, applied to full universe.
+    # Prevents micro-caps from skewing tercile thresholds (Fama-French standard).
+    "bps": "nyse",
+    # bp_min_n=1: do not drop valid factors in sparse early years (pre-1970).
+    "bp_min_n": 1,
     "cmp": {"us": True, "int": False},
     "signals": {"us": False, "int": False, "standardize": True, "weight": "vw_cap"},
     "regional_pfs": {
@@ -144,7 +148,19 @@ def portfolios(
     # characerteristics data
     file_path = f"{data_path}/characteristics/{excntry}.parquet"
 
-    # Select the required columns
+    # Change 2 — Schema-aware column loading with JKP dividend columns
+    # The chars parquet has 11 prebuilt dividend yield variants (confirmed present).
+    # We detect which exist at runtime so the script never crashes on missing cols.
+    JKP_DIV_COLS = [
+        "div1m_me", "divspc1m_me", "div3m_me", "div6m_me",
+        "div12m_me", "divspc12m_me", "div_me",
+        "div_at", "div_ni", "div_gr1a", "div_gr3a",
+    ]
+    _schema_available = set(pl.read_parquet_schema(file_path).keys())
+    present_div_cols = [c for c in JKP_DIV_COLS if c in _schema_available]
+    if present_div_cols:
+        print(f"[{excntry}] Dividend columns: {present_div_cols}", flush=True)
+
     columns = (
         [
             "id",
@@ -153,13 +169,14 @@ def portfolios(
             "comp_exchg",
             "crsp_exchcd",
             "size_grp",
-            "ret_exc",
+            "ret_exc",           # same-month excess return (friction/cost baseline)
             "ret_exc_lead1m",
             "me",
             "gics",
             "ff49",
         ]
         + chars
+        + present_div_cols     # all available JKP dividend yield variants
         + ["excntry"]
     )
 
@@ -352,7 +369,9 @@ def portfolios(
 
         data = data.with_columns(pl.col(x).cast(pl.Float64).alias("var"))
         if not signals:
-            # Select rows where 'var' is not missing and only specific columns
+            # Change 3 — include ret_exc and all dividend columns in the sub
+            # so they flow through into the Constituent Bible without extra joins.
+            _sub_div = [c for c in present_div_cols if c in data.columns]
             sub = (
                 data.lazy()
                 .filter(pl.col("var").is_not_null())
@@ -362,12 +381,13 @@ def portfolios(
                         "eom",
                         "var",
                         "size_grp",
+                        "ret_exc",           # same-month excess return
                         "ret_exc_lead1m",
                         "me",
                         "me_cap",
                         "crsp_exchcd",
                         "comp_exchg",
-                    ]
+                    ] + _sub_div
                 )
             )
         else:
@@ -415,35 +435,38 @@ def portfolios(
                 .clip(lower_bound=1, upper_bound=pfs)
                 .alias("pf")
             )
-		# --- START MODIFICATION: EXTRACT CONSTITUENT WEIGHTS ---
-            # Filter for Long (Top Portfolio) and Short (Bottom Portfolio) only
-            # pf=1 is the lowest bin, pf=pfs (e.g., 3 or 10) is the highest bin
-            weights_df = sub.filter(pl.col("pf").is_in([1, pfs]))
-            
-            # Calculate VW_CAP weights relative to that specific portfolio bin
-            weights_df = weights_df.with_columns(
-                (pl.col("me_cap") / pl.col("me_cap").sum().over(["eom", "pf"])).alias("weight")
-            )
-            
-            # Assign Leg Direction: +1 for Top Bin, -1 for Bottom Bin
-            # NOTE: You must multiply this by the factor direction from factor_details.xlsx later!
-            weights_df = weights_df.with_columns(
-                pl.when(pl.col("pf") == pfs).then(pl.lit(1))
-                .otherwise(pl.lit(-1)).cast(pl.Int8).alias("leg")
-            )
-
-            # Select only essential columns to save memory
-            weights_df = weights_df.select([
+			# ================================================================
+            # CONSTITUENT BIBLE — Change 4
+            # ----------------------------------------------------------------
+            # Save ALL three buckets (pf=1 Short, pf=2 Neutral, pf=3 Long)
+            # for every stock, factor, and month. Do NOT pre-compute weights
+            # or leg directions here — that happens downstream after sign
+            # corrections are applied per factor.
+            #
+            # Columns:
+            #   characteristic   factor name (e.g. "be_me")
+            #   id               PERMNO / stock identifier
+            #   eom              formation month-end (SIGNAL date, not trade date)
+            #   pf               bucket: 1=Short, 2=Neutral, 3=Long
+            #   me               raw market cap (VW denominator, uncapped)
+            #   me_cap           capped market cap (JKP VW_CAP denominator)
+            #   ret_exc          same-month excess return (friction cost baseline)
+            #   ret_exc_lead1m   next-month excess return (forward P&L)
+            #   div_*            all available JKP dividend yield columns
+            #
+            # 1-Day Lag convention (R lines 128-129):
+            #   eom here is the SIGNAL month. The backtest sets weight=0 on
+            #   the first trading day of the TRADE month (= eom + 1mo).
+            # ================================================================
+            _bible_cols = [
                 pl.lit(x).alias("characteristic"),
-                "id", 
-                "eom", 
-                "weight", 
-                "leg" # +1 or -1
-            ])
-            
-            # Store in the output dictionary
-            op["weights"] = weights_df.collect()
-            # --- END MODIFICATION ---
+                "id", "eom", "pf",
+                "me", "me_cap",
+                "ret_exc", "ret_exc_lead1m",
+            ] + [c for c in _sub_div]   # all available dividend cols
+
+            op["weights"] = sub.select(_bible_cols).collect()
+            # ================================================================
 
             pf_returns = sub.group_by(["pf", "eom"]).agg(
                 [
@@ -1296,28 +1319,64 @@ if settings["daily_pf"]:
 
 
 
-
-# ... existing write_parquet calls ...
-
-# Save Single Stock Constituent Weights
+# =============================================================================
+# CONSTITUENT BIBLE OUTPUT  (all_factor_constituents.parquet)
+# =============================================================================
+# Every stock × factor × month assignment (pf = 1/2/3), with raw market cap,
+# returns, and all JKP dividend yield columns attached.
+#
+# Downstream uses:
+#   (a) JKP Verification   → group by characteristic, compute VW_CAP L-S,
+#                             correlate with published JKP CSV (target ρ ≥ 0.99)
+#   (b) Arnott Netting      → arnott_strategy_master.py reads this file,
+#                             applies sign corrections, selects winning factors,
+#                             nets Long/Short legs per stock per month.
+#   (c) Friction modelling  → me, me_cap, ret_exc, div_* enable realistic
+#                             cost and carry estimates.
+#
+# 1-Day lag (R lines 128-129): eom = SIGNAL month. Trade month = eom + 1mo.
+# Backtest must zero out weight on the first trading day of the trade month.
+# =============================================================================
 if "portfolio_data" in globals():
-    # Extract weights from the nested dictionary structure
-    all_weights_list = [
-        sub_data["weights"] 
-        for sub_key, sub_data in portfolio_data.items() 
+    _bible_frames = [
+        sub_data["weights"]
+        for sub_key, sub_data in portfolio_data.items()
         if sub_data and "weights" in sub_data
     ]
-    
-    if all_weights_list:
-        print("Saving constituent weights...", flush=True)
-        all_weights = pl.concat(all_weights_list)
-        
-        # Filter by date
-        all_weights = all_weights.filter(pl.col("eom") <= settings["end_date"])
-        
-        # Save to parquet
-        all_weights.write_parquet(f"{output_path}/usa_factor_weights.parquet")
-        print(f"Weights saved to {output_path}/usa_factor_weights.parquet")
+
+    if _bible_frames:
+        print("\n[OUTPUT] Assembling Constituent Bible...", flush=True)
+        constituent_bible = pl.concat(_bible_frames)
+
+        # Shift eom forward by 1 month so downstream code can join on
+        # 'eom' as the TRADE month (consistent with pf_returns convention).
+        constituent_bible = constituent_bible.with_columns(
+            pl.col("eom").dt.offset_by("1mo").dt.month_end().alias("eom")
+        )
+
+        # Country tag
+        constituent_bible = constituent_bible.with_columns(
+            pl.lit("USA").alias("excntry")
+        )
+
+        # Date filter
+        constituent_bible = constituent_bible.filter(
+            pl.col("eom") <= settings["end_date"]
+        )
+
+        # Canonical column order: keys first, then returns, then market data, then divs
+        _fixed = ["eom", "id", "characteristic", "excntry", "pf",
+                  "me", "me_cap", "ret_exc", "ret_exc_lead1m"]
+        _rest  = [c for c in constituent_bible.columns if c not in _fixed]
+        constituent_bible = constituent_bible.select(_fixed + _rest)
+
+        out_path = f"{output_path}/all_factor_constituents.parquet"
+        constituent_bible.write_parquet(out_path)
+        print(f"[OK] Constituent Bible → {out_path}", flush=True)
+        print(f"     Rows        : {constituent_bible.height:,}", flush=True)
+        print(f"     Date range  : {constituent_bible['eom'].min()} → {constituent_bible['eom'].max()}", flush=True)
+        print(f"     Factors     : {constituent_bible['characteristic'].n_unique()}", flush=True)
+        print(f"     Columns     : {constituent_bible.columns}", flush=True)
 
 print(
     f"End            : {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}",
