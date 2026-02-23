@@ -50,7 +50,12 @@ OUTPUTS
                me, div12m_me, ret_exc_lead1m, ret_exc_lag1
 
   ../01_Data/Processed/Phase2/phase2_summary.csv
-      Performance table: Ann_Ret, Ann_Vol, Sharpe, Cum_Ret, Max_DD, Calmar, N_months
+      FACTOR-level performance: Ann_Ret, Ann_Vol, Sharpe (full 1963+ period)
+
+  ../01_Data/Processed/Phase2/phase2_stock_summary.csv
+      STOCK-level performance: Ann_Ret, Ann_Vol, Sharpe (months where stock data available)
+      Note: N_months < factor-level N because USA_stocks_char.parquet has gaps in early years.
+      Missing months have negative factor momentum on average, so stock SR > full-period factor SR.
 
 EXECUTION
 ---------
@@ -542,12 +547,12 @@ print(f"        me nulls            : {null_me:,} ({100*null_me/total_rows:.1f}%
 print(f"        div12m_me nulls     : {null_div:,} ({100*null_div/total_rows:.1f}%)  "
       f"← expected (many stocks don't pay dividends)")
 
-# Sanity check: verify strategy return from stock weights ≈ factor-level returns
+# ---- Sanity check for CS_LS_50 1M ----
 print("\n      Sanity check — stock-level vs factor-level returns (CS_LS_50, 1M):")
 check_strat = "CS_LS_50"
 check_lb    = "1M"
 
-stock_rets = (
+stock_rets_chk = (
     master
     .filter(
         (pl.col("strategy") == check_strat)
@@ -555,49 +560,88 @@ stock_rets = (
         & pl.col("ret_exc_lead1m").is_not_null()
     )
     .group_by("eom_signal")
-    .agg(
-        (pl.col("net_weight") * pl.col("ret_exc_lead1m")).sum().alias("stock_ret")
-    )
+    .agg((pl.col("net_weight") * pl.col("ret_exc_lead1m")).sum().alias("stock_ret"))
 )
 factor_rets_check = (
     factor_returns
-    .filter(
-        (pl.col("strategy") == check_strat)
-        & (pl.col("lookback") == check_lb)
-    )
+    .filter((pl.col("strategy") == check_strat) & (pl.col("lookback") == check_lb))
     .select(["eom_signal", "ret"])
 )
-cmp = stock_rets.join(factor_rets_check, on="eom_signal", how="inner")
+cmp = stock_rets_chk.join(factor_rets_check, on="eom_signal", how="inner")
 if len(cmp) > 10:
     corr = float(np.corrcoef(cmp["stock_ret"].to_numpy(), cmp["ret"].to_numpy())[0, 1])
-    print(f"        Pearson correlation (stock vs factor return): {corr:.4f}")
-    if corr < 0.90:
-        print("        *** WARNING: Low correlation — check direction/sign logic ***")
-    else:
-        print("        ✓ Good alignment between stock-level and factor-level returns")
+    flag = "*** WARNING: Low correlation — check direction/sign logic ***" if corr < 0.90 else "✓ Good alignment"
+    print(f"        Pearson correlation (stock vs factor return): {corr:.4f}  {flag}")
 
-    # Compute stock-level performance for the sanity check combo
-    stock_pnl = (
-        master
-        .filter(
-            (pl.col("strategy") == check_strat)
-            & (pl.col("lookback") == check_lb)
-            & pl.col("ret_exc_lead1m").is_not_null()
-        )
-        .group_by("eom_signal")
-        .agg((pl.col("net_weight") * pl.col("ret_exc_lead1m")).sum().alias("ret"))
-        .sort("eom_signal")
-    )
-    r = stock_pnl["ret"].to_numpy()
-    ann_ret = float(np.mean(r)) * 12
-    ann_vol = float(np.std(r, ddof=1)) * np.sqrt(12)
-    sharpe  = ann_ret / ann_vol if ann_vol > 0 else float("nan")
-    print(f"        Stock-level   | Ann Ret: {ann_ret:+.2%}  Ann Vol: {ann_vol:.2%}  Sharpe: {sharpe:.2f}")
-
-    # Compare to factor-level
-    factor_row = next((r for r in summary_rows if r["strategy"]==check_strat and r["lookback"]==check_lb), None)
+    r_chk = stock_rets_chk.sort("eom_signal")["stock_ret"].to_numpy()
+    ar_s = float(np.mean(r_chk)) * 12
+    av_s = float(np.std(r_chk, ddof=1)) * np.sqrt(12)
+    sr_s = ar_s / av_s if av_s > 0 else float("nan")
+    print(f"        Stock-level   | Ann Ret: {ar_s:+.2%}  Ann Vol: {av_s:.2%}  Sharpe: {sr_s:.2f}  N={len(r_chk)}")
+    factor_row = next((x for x in summary_rows if x["strategy"]==check_strat and x["lookback"]==check_lb), None)
     if factor_row:
-        print(f"        Factor-level  | Ann Ret: {factor_row['ann_ret']:+.2%}  Ann Vol: {factor_row['ann_vol']:.2%}  Sharpe: {factor_row['sharpe']:.2f}")
+        print(f"        Factor-level  | Ann Ret: {factor_row['ann_ret']:+.2%}  Ann Vol: {factor_row['ann_vol']:.2%}  Sharpe: {factor_row['sharpe']:.2f}  N={factor_row['n_months']}")
+        print(f"        NOTE: Factor N={factor_row['n_months']} > Stock N={len(r_chk)} because")
+        print(f"              {factor_row['n_months']-len(r_chk)} months lack stock characteristic data.")
+        print(f"              Factor SR for same {len(r_chk)} months is typically higher than full-period SR.")
+
+# ---- Stock-level performance summary for ALL strategy × lookback combos ----
+print("\n      Computing stock-level performance for all 30 strategy×lookback combinations...")
+
+stock_summary_rows = []
+for lb_label in [LOOKBACK_LABELS[lb] for lb in LOOKBACK_GRID]:
+    for strat_label in STRATEGY_NAMES:
+        stock_pnl = (
+            master
+            .filter(
+                (pl.col("strategy") == strat_label)
+                & (pl.col("lookback") == lb_label)
+                & pl.col("ret_exc_lead1m").is_not_null()
+            )
+            .group_by("eom_signal")
+            .agg((pl.col("net_weight") * pl.col("ret_exc_lead1m")).sum().alias("ret"))
+            .sort("eom_signal")
+        )
+        if len(stock_pnl) < 12:
+            continue
+        r = stock_pnl["ret"].to_numpy()
+        n = len(r)
+        ann_ret  = float(np.mean(r)) * MONTHS_PER_YEAR
+        ann_vol  = float(np.std(r, ddof=1)) * np.sqrt(MONTHS_PER_YEAR)
+        sharpe   = ann_ret / ann_vol if ann_vol > 0 else float("nan")
+        cum_ret  = float(np.prod(1 + r)) - 1
+        cum      = np.cumprod(1 + r)
+        peak     = np.maximum.accumulate(cum)
+        max_dd   = float(((cum - peak) / peak).min())
+        calmar   = ann_ret / abs(max_dd) if max_dd < 0 else float("nan")
+        stock_summary_rows.append({
+            "strategy":  strat_label,
+            "lookback":  lb_label,
+            "n_months":  n,
+            "ann_ret":   round(ann_ret, 6),
+            "ann_vol":   round(ann_vol, 6),
+            "sharpe":    round(sharpe, 4),
+            "cum_ret":   round(cum_ret, 6),
+            "max_dd":    round(max_dd, 6),
+            "calmar":    round(calmar, 4),
+        })
+
+# Print stock-level grid
+print(f"\n  {'Strategy':<12} {'Lookback':<8} {'Sharpe':>7} {'Ann_Ret':>9} {'Ann_Vol':>9} {'N':>6}  (stock-level, ret_exc_lead1m)")
+print("  " + "-" * 60)
+for row in stock_summary_rows:
+    print(f"  {row['strategy']:<12} {row['lookback']:<8} "
+          f"{row['sharpe']:>7.2f} {row['ann_ret']:>8.2%} "
+          f"{row['ann_vol']:>8.2%} {row['n_months']:>6}")
+
+# Save stock-level summary
+OUT_STOCK_SUMMARY = f"{OUTPUT_PATH}/phase2_stock_summary.csv"
+if stock_summary_rows:
+    with open(OUT_STOCK_SUMMARY, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(stock_summary_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(stock_summary_rows)
+    print(f"\n  Saved stock-level summary: {OUT_STOCK_SUMMARY}")
 
 # Save master file
 master.write_parquet(OUT_MASTER)
