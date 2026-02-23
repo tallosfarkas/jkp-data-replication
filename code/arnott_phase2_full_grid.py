@@ -76,15 +76,39 @@ warnings.filterwarnings("ignore")
 # CONFIGURATION
 # ============================================================
 
-# Data paths (relative to jkp-data-replication/ working dir)
-DATA_PATH    = "../01_Data/Processed"
-OUTPUT_PATH  = "../01_Data/Processed/Phase2"
-os.makedirs(OUTPUT_PATH, exist_ok=True)
+# --- Environment detection -------------------------------------------
+# Set ENV = "cluster" when running on WU HPC (~/jkp-data/).
+# Set ENV = "local"   when running on local Mac (../01_Data/Processed/).
+# Can also override via environment variable: ARNOTT_ENV=cluster uv run python ...
+import socket
+_hostname = socket.gethostname()
+ENV = os.environ.get(
+    "ARNOTT_ENV",
+    "cluster" if ("cluster" in _hostname or "slurm" in _hostname or
+                  _hostname.startswith("compute") or _hostname.startswith("node"))
+    else "local"
+)
+print(f"  Environment: {ENV}  (hostname: {_hostname})")
 
-# Input files
-DAILY_FACTOR_FILE = f"{DATA_PATH}/USA_daily_rets.parquet"        # Daily L-S factor portfolio rets
-STOCK_WEIGHTS_FILE = f"{DATA_PATH}/usa_factor_weights.parquet"   # Stock-level constituents
-STOCK_CHARS_FILE  = f"{DATA_PATH}/USA_stocks_char.parquet"       # Stock characteristics
+if ENV == "cluster":
+    # WU HPC: repo lives at ~/jkp-data/, data inside data/processed/
+    _BASE        = os.path.expanduser("~/jkp-data")
+    DATA_PATH    = f"{_BASE}/data/processed"
+    OUTPUT_PATH  = f"{_BASE}/data/processed/phase2_output"
+
+    DAILY_FACTOR_FILE  = f"{DATA_PATH}/portfolios/lms_daily.parquet"
+    STOCK_WEIGHTS_FILE = f"{DATA_PATH}/portfolios/usa_factor_weights.parquet"
+    STOCK_CHARS_FILE   = f"{DATA_PATH}/characteristics/USA.parquet"
+else:
+    # Local Mac: repo lives at jkp-data-replication/, data at ../01_Data/Processed/
+    DATA_PATH    = "../01_Data/Processed"
+    OUTPUT_PATH  = "../01_Data/Processed/Phase2"
+
+    DAILY_FACTOR_FILE  = f"{DATA_PATH}/USA_daily_rets.parquet"
+    STOCK_WEIGHTS_FILE = f"{DATA_PATH}/usa_factor_weights.parquet"
+    STOCK_CHARS_FILE   = f"{DATA_PATH}/USA_stocks_char.parquet"
+
+os.makedirs(OUTPUT_PATH, exist_ok=True)
 
 # Output files
 OUT_FACTOR_RETS   = f"{OUTPUT_PATH}/phase2_factor_returns.parquet"
