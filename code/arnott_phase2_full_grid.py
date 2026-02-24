@@ -195,7 +195,10 @@ monthly_factors = (
         .filter(pl.col("day_rank") == 1)
         .first()
         .alias("day1_gross"),
-        pl.col("date").max().alias("eom"),  # end-of-month date
+        # Use calendar end-of-month (not last trading day) so that eom matches
+        # the eom column in usa_factor_weights.parquet, which uses calendar month-end.
+        # When month-end falls on a weekend, last trading day != calendar EOM → join fails.
+        pl.col("date").max().dt.month_end().alias("eom"),  # calendar end-of-month
     )
     # 1-day-lagged return: skip first trading day
     .with_columns(
