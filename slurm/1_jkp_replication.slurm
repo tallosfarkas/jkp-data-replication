@@ -22,7 +22,7 @@ cd $SLURM_SUBMIT_DIR
 # 1. Run Data Generation (Stocks & Characteristics)
 echo ">>> [Step 1/2] Running main.py..."
 start_time=$(date +%s)
-uv run code/main.py
+uv run python jkp_replication/main.py
 end_time=$(date +%s)
 echo ">>> main.py finished in $((end_time - start_time)) seconds."
 
@@ -34,7 +34,7 @@ fi
 # 2. Run Portfolio Construction (Factors)
 echo ">>> [Step 2/2] Running portfolio.py..."
 start_time=$(date +%s)
-uv run code/portfolio.py
+uv run python jkp_replication/portfolio.py
 end_time=$(date +%s)
 echo ">>> portfolio.py finished in $((end_time - start_time)) seconds."
 

@@ -1,3 +1,16 @@
+# =============================================================================
+# MODIFIED FROM ORIGINAL JKP CODEBASE
+# =============================================================================
+# Based on portfolio.py from Jensen, Kelly & Pedersen (2023).
+# Key modifications:
+#   1. Scope restricted to USA stocks only
+#   2. Added constituent weight extraction → usa_factor_weights.parquet
+#      (PERMNO, month, VW-cap weight, leg for each stock in top/bottom portfolio)
+#   3. Added daily portfolio return aggregation via factor constituent weights
+#   4. Added dividend yield columns (div_yield, divi, retx) to output
+# Original: github.com/bkelly-lab/ReplicationCrisis
+# =============================================================================
+
 import os
 import polars as pl
 from datetime import date
@@ -1377,6 +1390,31 @@ if "portfolio_data" in globals():
         print(f"     Date range  : {constituent_bible['eom'].min()} → {constituent_bible['eom'].max()}", flush=True)
         print(f"     Factors     : {constituent_bible['characteristic'].n_unique()}", flush=True)
         print(f"     Columns     : {constituent_bible.columns}", flush=True)
+
+        # -----------------------------------------------------------------
+        # usa_factor_weights.parquet
+        # Derived from all_factor_constituents: top (pf=3) and bottom (pf=1)
+        # legs only, with precomputed VW-cap weight and leg direction (+1/-1).
+        # Expected schema by arnott_strategy_master.py and factor_mom_arnott.py:
+        #   characteristic, id, eom, weight (Float64), leg (Int8), excntry
+        # -----------------------------------------------------------------
+        usa_weights = (
+            constituent_bible
+            .filter(pl.col("pf").is_in([1, 3]))
+            .with_columns(
+                (pl.col("me_cap") / pl.col("me_cap").sum().over(["characteristic", "eom", "pf"]))
+                .cast(pl.Float64)
+                .alias("weight"),
+                pl.when(pl.col("pf") == 3).then(pl.lit(1, dtype=pl.Int8))
+                  .otherwise(pl.lit(-1, dtype=pl.Int8))
+                .alias("leg"),
+            )
+            .select(["characteristic", "id", "eom", "weight", "leg", "excntry"])
+        )
+        weights_path = f"{output_path}/usa_factor_weights.parquet"
+        usa_weights.write_parquet(weights_path)
+        print(f"[OK] USA Factor Weights → {weights_path}", flush=True)
+        print(f"     Rows        : {usa_weights.height:,}", flush=True)
 
 print(
     f"End            : {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}",

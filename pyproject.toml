@@ -1,7 +1,7 @@
 [project]
-name = "sas-python-migrate"
+name = "jkp-factor-momentum"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python migration of the JKP (2023) factor pipeline + Arnott (2023) stock-level factor momentum extension"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

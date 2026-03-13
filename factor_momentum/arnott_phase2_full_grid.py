@@ -60,7 +60,7 @@ OUTPUTS
 EXECUTION
 ---------
   cd jkp-data-replication
-  uv run python code/arnott_phase2_full_grid.py
+  uv run python factor_momentum/arnott_phase2_full_grid.py
 """
 
 import os

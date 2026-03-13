@@ -30,7 +30,7 @@ echo ">>> [Step 2/2] Running portfolio.py..."
 start_time=$(date +%s)
 
 # Using 'uv run' as per your environment setup
-uv run code/portfolio_USA_weights.py
+uv run python jkp_replication/portfolio_USA_weights.py
 EXIT_CODE=$?
 
 end_time=$(date +%s)

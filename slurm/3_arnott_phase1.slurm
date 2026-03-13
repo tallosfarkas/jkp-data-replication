@@ -84,7 +84,7 @@ echo ""
 echo "[STEP 1/2] portfolio_USA_weights.py"
 echo "           Start: $(date '+%H:%M:%S')"
 
-uv run python code/portfolio_USA_weights.py
+uv run python jkp_replication/portfolio_USA_weights.py
 STEP1_EXIT=$?
 
 if [ $STEP1_EXIT -ne 0 ]; then
@@ -119,7 +119,7 @@ echo ""
 echo "[STEP 2/2] arnott_strategy_master.py"
 echo "           Start: $(date '+%H:%M:%S')"
 
-uv run python code/arnott_strategy_master.py
+uv run python factor_momentum/arnott_strategy_master.py
 STEP2_EXIT=$?
 
 if [ $STEP2_EXIT -ne 0 ]; then
